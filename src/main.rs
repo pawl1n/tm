@@ -48,81 +48,76 @@ impl eframe::App for MyApp {
         };
 
         egui::TopBottomPanel::bottom(egui::Id::new("Loader"))
-            .frame(frame.clone())
+            .frame(frame)
             .show(ctx, |ui| {
                 self.add_image_selector(ui);
             });
 
         egui::SidePanel::right(egui::Id::new("Info"))
             .min_width(200.0)
-            .frame(frame.clone())
+            .frame(frame)
             .resizable(false)
             .show(ctx, |ui| {
-                frame.clone().show(ui, |ui| self.add_stats(ui));
+                frame.show(ui, |ui| self.add_stats(ui));
 
                 // if !self.images.is_empty() {
                 if !self.classes.is_empty() {
-                    frame.clone().show(ui, |ui| self.add_controls(ui));
+                    frame.show(ui, |ui| self.add_controls(ui));
                 }
             });
 
-        egui::CentralPanel::default()
-            .frame(frame.clone())
-            .show(ctx, |ui| {
-                egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                    if !self.classes.is_empty() {
-                        ui.horizontal(|ui| {
-                            let selected = &self.classes[self.selected_class];
+        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+            egui::ScrollArea::new([true, true]).show(ui, |ui| {
+                if !self.classes.is_empty() {
+                    ui.horizontal(|ui| {
+                        let selected = &self.classes[self.selected_class];
 
-                            frame.clone().show(ui, |ui| {
-                                ui.set_max_width(self.size.unwrap().0 as f32);
-                                ui.vertical_centered(|ui| {
-                                    ui.add(egui::Label::new("Selected image"));
-                                    ui.image((
-                                        selected.texture().id(),
-                                        selected.texture().size_vec2(),
-                                    ));
-                                });
+                        frame.show(ui, |ui| {
+                            ui.set_max_width(self.size.unwrap().0 as f32);
+                            ui.vertical_centered(|ui| {
+                                ui.add(egui::Label::new("Selected image"));
+                                ui.image((selected.texture().id(), selected.texture().size_vec2()));
                             });
-                            frame.clone().show(ui, |ui| {
-                                self.corridor.draw_corridor_plot(ui);
+                        });
+                        frame.show(ui, |ui| {
+                            self.corridor.draw_corridor_plot(ui);
+                        });
+                    });
+                }
+
+                frame.show(ui, |ui| {
+                    if !self.matrices.is_empty() {
+                        ui.add(egui::Label::new("Binary matrices"));
+
+                        ui.horizontal_wrapped(|ui| {
+                            self.matrices.iter().for_each(|matrix| {
+                                ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
                             });
                         });
                     }
 
-                    frame.clone().show(ui, |ui| {
-                        if !self.matrices.is_empty() {
-                            ui.add(egui::Label::new("Binary matrices"));
+                    if !self.reference_vectors.is_empty() {
+                        ui.add(egui::Label::new("Reference vectors"));
 
-                            ui.horizontal_wrapped(|ui| {
-                                self.matrices.iter().for_each(|matrix| {
-                                    ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
-                                });
+                        ui.horizontal_wrapped(|ui| {
+                            self.reference_vectors.iter().for_each(|vector| {
+                                ui.image((vector.texture().id(), vector.texture().size_vec2()));
                             });
-                        }
+                        });
+                    }
 
-                        if !self.reference_vectors.is_empty() {
-                            ui.add(egui::Label::new("Reference vectors"));
+                    if !self.classes.is_empty() {
+                        ui.add(egui::Label::new("All classes"));
 
-                            ui.horizontal_wrapped(|ui| {
-                                self.reference_vectors.iter().for_each(|vector| {
-                                    ui.image((vector.texture().id(), vector.texture().size_vec2()));
-                                });
+                        ui.horizontal_wrapped(|ui| {
+                            self.classes.iter().for_each(|matrix| {
+                                ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
                             });
-                        }
-
-                        if !self.classes.is_empty() {
-                            ui.add(egui::Label::new("All classes"));
-
-                            ui.horizontal_wrapped(|ui| {
-                                self.classes.iter().for_each(|matrix| {
-                                    ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
-                                });
-                            });
-                        }
-                    });
+                        });
+                    }
                 });
             });
+        });
     }
 }
 
@@ -283,10 +278,8 @@ impl MyApp {
 
         if self.size.is_none() {
             self.size = Some((luma.width() as usize, luma.height() as usize));
-        } else {
-            if self.size.unwrap() != (luma.width() as usize, luma.height() as usize) {
-                return Err("Error: Images should be of the same format".to_owned());
-            }
+        } else if self.size.unwrap() != (luma.width() as usize, luma.height() as usize) {
+            return Err("Error: Images should be of the same format".to_owned());
         }
 
         let image = ColorImage::from_gray(
