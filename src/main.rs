@@ -1,13 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 mod class_data;
+mod corridor;
+
 use class_data::ClassData;
+use corridor::{Corridor, DrawPlot};
 
 use eframe::{egui, epaint::ColorImage};
 use image::{open, EncodableLayout};
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::vec2(800.0, 500.0)),
+        initial_window_size: Some(egui::vec2(800.0, 600.0)),
         ..Default::default()
     };
 
@@ -26,13 +29,14 @@ fn main() -> Result<(), eframe::Error> {
 #[derive(Default)]
 struct MyApp {
     path: String,
-    size: Option<(u32, u32)>,
+    size: Option<(usize, usize)>,
     error: Option<String>,
     selected_class: usize,
-    corridor: (Vec<u8>, Vec<u8>, Vec<u8>), // math expectation and lower and upper allowances
-    delta: u8,
     classes: Vec<ClassData>,
     matrices: Vec<ClassData>,
+    delta: u8,
+    corridor: Corridor,
+    reference_vectors: Vec<ClassData>,
 }
 
 impl eframe::App for MyApp {
@@ -65,37 +69,57 @@ impl eframe::App for MyApp {
         egui::CentralPanel::default()
             .frame(frame.clone())
             .show(ctx, |ui| {
-                if !self.classes.is_empty() {
-                    frame.clone().show(ui, |ui| {
-                        let selected = &self.classes[self.selected_class];
-
-                        ui.vertical_centered_justified(|ui| {
-                            ui.add(egui::Label::new("Selected image"));
-                            ui.image((selected.texture().id(), selected.texture().size_vec2()));
-                        });
-                        frame.clone().show(ui, |ui| {
-                            self.draw_plot(ui);
-                        });
-                    });
-                }
-
-                frame.clone().show(ui, |ui| {
-                    ui.add(egui::Label::new("Binary matrices"));
-
-                    ui.horizontal_wrapped(|ui| {
-                        self.matrices.iter().for_each(|matrix| {
-                            ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
-                        });
-                    });
-                });
-
                 egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                    ui.add(egui::Label::new("All classes"));
+                    if !self.classes.is_empty() {
+                        ui.horizontal(|ui| {
+                            let selected = &self.classes[self.selected_class];
 
-                    ui.horizontal_wrapped(|ui| {
-                        self.classes.iter().for_each(|matrix| {
-                            ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
+                            frame.clone().show(ui, |ui| {
+                                ui.set_max_width(self.size.unwrap().0 as f32);
+                                ui.vertical_centered(|ui| {
+                                    ui.add(egui::Label::new("Selected image"));
+                                    ui.image((
+                                        selected.texture().id(),
+                                        selected.texture().size_vec2(),
+                                    ));
+                                });
+                            });
+                            frame.clone().show(ui, |ui| {
+                                self.corridor.draw_corridor_plot(ui);
+                            });
                         });
+                    }
+
+                    frame.clone().show(ui, |ui| {
+                        if !self.matrices.is_empty() {
+                            ui.add(egui::Label::new("Binary matrices"));
+
+                            ui.horizontal_wrapped(|ui| {
+                                self.matrices.iter().for_each(|matrix| {
+                                    ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
+                                });
+                            });
+                        }
+
+                        if !self.reference_vectors.is_empty() {
+                            ui.add(egui::Label::new("Reference vectors"));
+
+                            ui.horizontal_wrapped(|ui| {
+                                self.reference_vectors.iter().for_each(|vector| {
+                                    ui.image((vector.texture().id(), vector.texture().size_vec2()));
+                                });
+                            });
+                        }
+
+                        if !self.classes.is_empty() {
+                            ui.add(egui::Label::new("All classes"));
+
+                            ui.horizontal_wrapped(|ui| {
+                                self.classes.iter().for_each(|matrix| {
+                                    ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
+                                });
+                            });
+                        }
                     });
                 });
             });
@@ -105,7 +129,8 @@ impl eframe::App for MyApp {
 impl MyApp {
     fn calculate_binary_matrices(&mut self, ctx: &egui::Context) {
         if let Some((w, h)) = self.size {
-            let (_, lower, upper) = &self.corridor;
+            let lower = self.corridor.lower_allowance();
+            let upper = self.corridor.upper_allowance();
 
             self.matrices = self
                 .classes
@@ -117,7 +142,7 @@ impl MyApp {
                         .iter()
                         .enumerate()
                         .map(|(i, x)| {
-                            let index = i.rem_euclid(w as usize);
+                            let index = i.rem_euclid(w);
                             if *x > lower[index] && *x < upper[index] {
                                 255
                             } else {
@@ -126,79 +151,53 @@ impl MyApp {
                         })
                         .collect();
 
-                    let image = ColorImage::from_gray([w as usize, h as usize], &key);
-                    let texture = ctx.load_texture(i.to_string(), image, Default::default());
+                    let image = ColorImage::from_gray([w, h], &key);
+                    let texture = ctx.load_texture(
+                        "matrix".to_owned() + &i.to_string(),
+                        image,
+                        Default::default(),
+                    );
 
                     ClassData::new(key, texture)
                 })
                 .collect();
+
+            self.calculate_reference_vectors(ctx);
         }
     }
 
-    fn draw_plot(&self, ui: &mut egui::Ui) {
-        egui_plot::Plot::new("Corridor")
-            .legend(egui_plot::Legend::default())
-            .height(200.0)
-            .show(ui, |ui| {
-                ui.line(
-                    egui_plot::Line::new(vec_to_plot_points(&self.corridor.0)).name("Expectation"),
-                );
+    fn calculate_reference_vectors(&mut self, ctx: &egui::Context) {
+        if let Some((w, h)) = self.size {
+            self.reference_vectors = self
+                .matrices
+                .iter()
+                .enumerate()
+                .map(|(i, matrix)| {
+                    let mut vector = Vec::with_capacity(w);
 
-                ui.line(
-                    egui_plot::Line::new(vec_to_plot_points(&self.corridor.1))
-                        .name("Lower allowance"),
-                );
+                    for i in 0..w {
+                        let mut count = 0;
 
-                ui.line(
-                    egui_plot::Line::new(vec_to_plot_points(&self.corridor.2))
-                        .name("Upper allowance"),
-                );
-            });
-    }
+                        for j in 0..h {
+                            if matrix.bytes()[i + j * w] == 255 {
+                                count += 1;
+                            }
+                        }
 
-    fn calculate_corridor(&mut self) {
-        let expectation = self.math_expectation();
-        let lower_allowance = self.lower_allowance(&expectation, self.delta);
-        let upper_allowance = self.upper_allowance(&expectation, self.delta);
+                        vector.push(if count > h / 2 { u8::MAX } else { u8::MIN });
+                    }
 
-        self.corridor = (expectation, lower_allowance, upper_allowance);
-    }
+                    let image = ColorImage::from_gray([w, 10], &vector.repeat(10));
+                    let texture = ctx.load_texture(
+                        "reference_vector".to_owned() + &i.to_string(),
+                        image,
+                        Default::default(),
+                    );
 
-    fn math_expectation(&self) -> Vec<u8> {
-        let (w, h) = self.size.expect("Invalid state: select image before use");
-
-        let selected = &self.classes[self.selected_class];
-
-        let mut avgerage_by_col: Vec<u8> = Vec::with_capacity(w as usize);
-
-        // let bytes = selected.0.as_bytes();
-        let bytes = selected.bytes();
-
-        for i in 0..w {
-            let mut sum: u32 = 0;
-
-            for j in 0..h {
-                sum += bytes[(i * j) as usize] as u32;
-            }
-
-            avgerage_by_col.push((sum / w) as u8);
+                    ClassData::new(vector, texture)
+                })
+                .collect();
         }
-
-        avgerage_by_col
-    }
-
-    fn lower_allowance(&self, expectation: &[u8], delta: u8) -> Vec<u8> {
-        expectation
-            .iter()
-            .map(|x| x.saturating_sub(delta))
-            .collect()
-    }
-
-    fn upper_allowance(&self, expectation: &[u8], delta: u8) -> Vec<u8> {
-        expectation
-            .iter()
-            .map(|x| x.saturating_add(delta))
-            .collect()
     }
 
     fn add_controls(&mut self, ui: &mut egui::Ui) {
@@ -213,7 +212,10 @@ impl MyApp {
                     .clicked()
                 {
                     self.selected_class = i;
-                    self.calculate_corridor();
+                    self.corridor.set_base_class(
+                        self.classes[self.selected_class].bytes(),
+                        self.size.unwrap(),
+                    );
                     self.calculate_binary_matrices(ui.ctx());
                 }
             }
@@ -224,7 +226,7 @@ impl MyApp {
                 .add(egui::Slider::new(&mut self.delta, 0..=255))
                 .changed()
             {
-                self.calculate_corridor();
+                self.corridor.delta(self.delta);
                 self.calculate_binary_matrices(ui.ctx());
             }
         });
@@ -255,7 +257,9 @@ impl MyApp {
                 } else {
                     self.error = None;
                     self.path.clear();
-                    self.calculate_corridor();
+                    if self.classes.len() == 1 {
+                        self.corridor = Corridor::new(self.classes[0].bytes(), self.size.unwrap())
+                    }
                     self.calculate_binary_matrices(ui.ctx());
                 }
             };
@@ -278,9 +282,9 @@ impl MyApp {
         }
 
         if self.size.is_none() {
-            self.size = Some((luma.width(), luma.height()));
+            self.size = Some((luma.width() as usize, luma.height() as usize));
         } else {
-            if self.size.unwrap() != (luma.width(), luma.height()) {
+            if self.size.unwrap() != (luma.width() as usize, luma.height() as usize) {
                 return Err("Error: Images should be of the same format".to_owned());
             }
         }
@@ -296,9 +300,4 @@ impl MyApp {
 
         Ok(())
     }
-}
-
-fn vec_to_plot_points(value: &[u8]) -> egui_plot::PlotPoints {
-    let points: Vec<f32> = value.iter().map(|x| *x as f32).collect();
-    egui_plot::PlotPoints::from_ys_f32(&points)
 }
