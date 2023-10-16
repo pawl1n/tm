@@ -203,7 +203,7 @@ impl MyApp {
     }
 
     fn calculate_binary_matrices(&mut self, ctx: &egui::Context) {
-        if let Some((w, h)) = self.size {
+        if let Some((attributes, realizations)) = self.size {
             let lower = self.corridor.lower_allowance();
             let upper = self.corridor.upper_allowance();
 
@@ -217,7 +217,7 @@ impl MyApp {
                         .iter()
                         .enumerate()
                         .map(|(i, x)| {
-                            let index = i.rem_euclid(w);
+                            let index = i.rem_euclid(attributes);
                             if *x > lower[index] && *x < upper[index] {
                                 255
                             } else {
@@ -226,7 +226,7 @@ impl MyApp {
                         })
                         .collect();
 
-                    let image = ColorImage::from_gray([w, h], &key);
+                    let image = ColorImage::from_gray([attributes, realizations], &key);
                     let texture = ctx.load_texture(
                         "matrix".to_owned() + &i.to_string(),
                         image,
@@ -243,27 +243,31 @@ impl MyApp {
     }
 
     fn calculate_reference_vectors(&mut self, ctx: &egui::Context) {
-        if let Some((w, h)) = self.size {
+        if let Some((attributes, realizations)) = self.size {
             self.reference_vectors = self
                 .matrices
                 .iter()
                 .enumerate()
                 .map(|(i, matrix)| {
-                    let mut vector = Vec::with_capacity(w);
+                    let mut vector = Vec::with_capacity(attributes);
 
-                    for i in 0..w {
+                    for i in 0..attributes {
                         let mut count = 0;
 
-                        for j in 0..h {
-                            if matrix.bytes()[i + j * w] == 255 {
+                        for j in 0..realizations {
+                            if matrix.bytes()[i + j * attributes] == 255 {
                                 count += 1;
                             }
                         }
 
-                        vector.push(if count > h / 2 { u8::MAX } else { u8::MIN });
+                        vector.push(if count > realizations / 2 {
+                            u8::MAX
+                        } else {
+                            u8::MIN
+                        });
                     }
 
-                    let image = ColorImage::from_gray([w, 10], &vector.repeat(10));
+                    let image = ColorImage::from_gray([attributes, 10], &vector.repeat(10));
                     let texture = ctx.load_texture(
                         "reference_vector".to_owned() + &i.to_string(),
                         image,
