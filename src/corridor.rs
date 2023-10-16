@@ -85,7 +85,6 @@ impl DrawPlot for Corridor {
     fn draw_corridor_plot(&self, ui: &mut Ui) {
         Plot::new("Corridor")
             .legend(Legend::default())
-            .height(200.0)
             .show(ui, |ui| {
                 ui.line(Line::new(vec_to_plot_points(&self.expectation)).name("Expectation"));
                 ui.line(

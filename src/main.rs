@@ -37,6 +37,7 @@ struct MyApp {
     delta: u8,
     corridor: Corridor,
     reference_vectors: Vec<ClassData>,
+    sk: Vec<(Vec<u32>, Vec<u32>)>,
 }
 
 impl eframe::App for MyApp {
@@ -53,75 +54,154 @@ impl eframe::App for MyApp {
                 self.add_image_selector(ui);
             });
 
-        egui::SidePanel::right(egui::Id::new("Info"))
-            .min_width(200.0)
-            .frame(frame)
+        egui::Window::new("Information")
             .resizable(false)
             .show(ctx, |ui| {
                 frame.show(ui, |ui| self.add_stats(ui));
-
-                // if !self.images.is_empty() {
-                if !self.classes.is_empty() {
-                    frame.show(ui, |ui| self.add_controls(ui));
-                }
             });
 
-        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-            egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                if !self.classes.is_empty() {
-                    ui.horizontal(|ui| {
-                        let selected = &self.classes[self.selected_class];
+        if !self.classes.is_empty() {
+            egui::Window::new("Settings")
+                .resizable(false)
+                .show(ctx, |ui| {
+                    frame.show(ui, |ui| self.add_controls(ui));
+                });
 
-                        frame.show(ui, |ui| {
-                            ui.set_max_width(self.size.unwrap().0 as f32);
-                            ui.vertical_centered(|ui| {
-                                ui.add(egui::Label::new("Selected image"));
-                                ui.image((selected.texture().id(), selected.texture().size_vec2()));
-                            });
-                        });
-                        frame.show(ui, |ui| {
-                            self.corridor.draw_corridor_plot(ui);
-                        });
+            egui::Window::new("Plot")
+                .default_size(egui::vec2(400.0, 200.0))
+                .show(ctx, |ui| {
+                    frame.show(ui, |ui| {
+                        self.corridor.draw_corridor_plot(ui);
                     });
-                }
+                });
 
-                frame.show(ui, |ui| {
-                    if !self.matrices.is_empty() {
-                        ui.add(egui::Label::new("Binary matrices"));
+            egui::Window::new("SK").show(ctx, |ui| {
+                self.sk.iter().enumerate().for_each(|(i, sk)| {
+                    ui.add(egui::Label::new(format!("SK{i}[1,1..N]")));
 
-                        ui.horizontal_wrapped(|ui| {
-                            self.matrices.iter().for_each(|matrix| {
-                                ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
+                    egui::ScrollArea::horizontal()
+                        .id_source(format!("sk{i}.0"))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                sk.0.iter().for_each(|x| {
+                                    ui.label(x.to_string());
+                                });
                             });
                         });
-                    }
-
-                    if !self.reference_vectors.is_empty() {
-                        ui.add(egui::Label::new("Reference vectors"));
-
-                        ui.horizontal_wrapped(|ui| {
-                            self.reference_vectors.iter().for_each(|vector| {
-                                ui.image((vector.texture().id(), vector.texture().size_vec2()));
+                    ui.add(egui::Label::new(format!("SK{i}[2,1..N]")));
+                    egui::ScrollArea::horizontal()
+                        .id_source(format!("sk{i}.1"))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                sk.1.iter().for_each(|x| {
+                                    ui.label(x.to_string());
+                                });
                             });
                         });
-                    }
-
-                    if !self.classes.is_empty() {
-                        ui.add(egui::Label::new("All classes"));
-
-                        ui.horizontal_wrapped(|ui| {
-                            self.classes.iter().for_each(|matrix| {
-                                ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
-                            });
-                        });
-                    }
                 });
             });
-        });
+
+            egui::Window::new("Classes")
+                .resizable(false)
+                .show(ctx, |ui| {
+                    egui::ScrollArea::new([true, true]).show(ui, |ui| {
+                        frame.show(ui, |ui| {
+                            ui.add(egui::Label::new("Classes"));
+
+                            ui.horizontal_wrapped(|ui| {
+                                self.classes.iter().for_each(|matrix| {
+                                    ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
+                                });
+                            });
+
+                            if !self.matrices.is_empty() {
+                                ui.add(egui::Label::new("Binary matrices"));
+
+                                ui.horizontal_wrapped(|ui| {
+                                    self.matrices.iter().for_each(|matrix| {
+                                        ui.image((
+                                            matrix.texture().id(),
+                                            matrix.texture().size_vec2(),
+                                        ));
+                                    });
+                                });
+                            }
+
+                            if !self.reference_vectors.is_empty() {
+                                ui.add(egui::Label::new("Reference vectors"));
+
+                                ui.horizontal_wrapped(|ui| {
+                                    self.reference_vectors.iter().for_each(|vector| {
+                                        ui.image((
+                                            vector.texture().id(),
+                                            vector.texture().size_vec2(),
+                                        ));
+                                    });
+                                });
+                            }
+                        });
+                    });
+                });
+        }
     }
 }
 
 impl MyApp {
+    fn calculate_code_distances(&mut self) {
+        if let Some(size) = self.size {
+            let (attributes, _) = size;
+
+            self.sk = Vec::with_capacity(self.classes.len());
+
+            for index in 0..self.matrices.len() {
+                let center = self.reference_vectors[index].bytes();
+
+                let sk1 = self.matrices[index]
+                    .bytes()
+                    .chunks(attributes)
+                    .map(|realization| self.code_distance_between(realization, center))
+                    .collect();
+
+                let mut sk2 = Vec::new();
+
+                if let Some(closest) = self
+                    .reference_vectors
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| i != &index)
+                    .map(|(i, reference_vector)| {
+                        (
+                            i,
+                            self.code_distance_between(reference_vector.bytes(), center),
+                        )
+                    })
+                    .min_by_key(|(_, distance)| *distance)
+                    .map(|(i, _)| i)
+                {
+                    sk2 = self.matrices[closest]
+                        .bytes()
+                        .chunks(attributes)
+                        .map(|realization| self.code_distance_between(realization, center))
+                        .collect();
+                }
+
+                self.sk.push((sk1, sk2));
+            }
+        }
+    }
+
+    fn code_distance_between(&self, vector1: &[u8], vector2: &[u8]) -> u32 {
+        assert!(vector1.len() == vector2.len());
+        let mut sum: u32 = 0;
+        for i in 0..vector1.len() {
+            if vector2[i] != vector1[i] {
+                sum += 1;
+            }
+        }
+
+        sum
+    }
+
     fn calculate_binary_matrices(&mut self, ctx: &egui::Context) {
         if let Some((w, h)) = self.size {
             let lower = self.corridor.lower_allowance();
@@ -158,6 +238,7 @@ impl MyApp {
                 .collect();
 
             self.calculate_reference_vectors(ctx);
+            self.calculate_code_distances();
         }
     }
 
@@ -196,6 +277,11 @@ impl MyApp {
     }
 
     fn add_controls(&mut self, ui: &mut egui::Ui) {
+        ui.vertical_centered(|ui| {
+            let selected = &self.classes[self.selected_class];
+            ui.add(egui::Label::new("Selected class"));
+            ui.image((selected.texture().id(), selected.texture().size_vec2()));
+        });
         ui.add(egui::Label::new("Select class:"));
         ui.horizontal_wrapped(|ui| {
             for i in 0..self.classes.len() {
@@ -233,7 +319,7 @@ impl MyApp {
             self.size.map_or(0, |s| s.1)
         )));
         ui.add(egui::Label::new(format!(
-            "Number of traits: {}",
+            "Number of attributes: {}",
             self.size.map_or(0, |s| s.0)
         )));
         ui.add(egui::Label::new(format!(
