@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 mod class_data;
 mod corridor;
+mod hamming;
+mod painter;
 
 use class_data::ClassData;
 use corridor::{Corridor, DrawPlot};
@@ -10,7 +12,7 @@ use image::{open, EncodableLayout};
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::vec2(800.0, 600.0)),
+        initial_window_size: Some(egui::vec2(1000.0, 600.0)),
         ..Default::default()
     };
 
@@ -18,7 +20,7 @@ fn main() -> Result<(), eframe::Error> {
         "SATPR",
         options,
         Box::new(|cc| {
-            // This gives us image support:
+            // Image support:
             egui_extras::install_image_loaders(&cc.egui_ctx);
 
             Box::<MyApp>::default()
@@ -37,7 +39,8 @@ struct MyApp {
     delta: u8,
     corridor: Corridor,
     reference_vectors: Vec<ClassData>,
-    sk: Vec<(Vec<u32>, Vec<u32>)>,
+    sk: Vec<(Vec<u32>, (Vec<u32>, u32))>,
+    distances: Vec<u32>,
 }
 
 impl eframe::App for MyApp {
@@ -53,6 +56,12 @@ impl eframe::App for MyApp {
             .show(ctx, |ui| {
                 self.add_image_selector(ui);
             });
+
+        egui::Window::new("2d").show(ctx, |ui| {
+            // frame.show(ui, |ui| {
+            painter::paint(ui, &self.sk);
+            // });
+        });
 
         egui::Window::new("Information")
             .resizable(false)
@@ -93,7 +102,7 @@ impl eframe::App for MyApp {
                         .id_source(format!("sk{i}.1"))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
-                                sk.1.iter().for_each(|x| {
+                                sk.1 .0.iter().for_each(|x| {
                                     ui.label(x.to_string());
                                 });
                             });
@@ -148,58 +157,32 @@ impl eframe::App for MyApp {
 
 impl MyApp {
     fn calculate_code_distances(&mut self) {
-        if let Some(size) = self.size {
-            let (attributes, _) = size;
+        self.sk = Vec::with_capacity(self.classes.len());
 
-            self.sk = Vec::with_capacity(self.classes.len());
+        for index in 0..self.matrices.len() {
+            let center = self.reference_vectors[index].bytes();
 
-            for index in 0..self.matrices.len() {
-                let center = self.reference_vectors[index].bytes();
-
-                let sk1 = self.matrices[index]
-                    .bytes()
-                    .chunks(attributes)
-                    .map(|realization| self.code_distance_between(realization, center))
-                    .collect();
-
-                let mut sk2 = Vec::new();
-
-                if let Some(closest) = self
-                    .reference_vectors
+            self.sk.push((
+                hamming::distances_between(self.matrices[index].bytes(), center),
+                self.reference_vectors
                     .iter()
                     .enumerate()
                     .filter(|(i, _)| i != &index)
                     .map(|(i, reference_vector)| {
                         (
                             i,
-                            self.code_distance_between(reference_vector.bytes(), center),
+                            hamming::distance_between(reference_vector.bytes(), center),
                         )
                     })
                     .min_by_key(|(_, distance)| *distance)
-                    .map(|(i, _)| i)
-                {
-                    sk2 = self.matrices[closest]
-                        .bytes()
-                        .chunks(attributes)
-                        .map(|realization| self.code_distance_between(realization, center))
-                        .collect();
-                }
-
-                self.sk.push((sk1, sk2));
-            }
+                    .map_or_else(Vec::new, |(closest, distance)| {
+                        return (
+                            hamming::distances_between(self.matrices[closest].bytes(), center),
+                            distance,
+                        );
+                    }),
+            ));
         }
-    }
-
-    fn code_distance_between(&self, vector1: &[u8], vector2: &[u8]) -> u32 {
-        assert!(vector1.len() == vector2.len());
-        let mut sum: u32 = 0;
-        for i in 0..vector1.len() {
-            if vector2[i] != vector1[i] {
-                sum += 1;
-            }
-        }
-
-        sum
     }
 
     fn calculate_binary_matrices(&mut self, ctx: &egui::Context) {
@@ -281,11 +264,11 @@ impl MyApp {
     }
 
     fn add_controls(&mut self, ui: &mut egui::Ui) {
-        ui.vertical_centered(|ui| {
-            let selected = &self.classes[self.selected_class];
-            ui.add(egui::Label::new("Selected class"));
-            ui.image((selected.texture().id(), selected.texture().size_vec2()));
-        });
+        // ui.vertical_centered(|ui| {
+        let selected = &self.classes[self.selected_class];
+        ui.add(egui::Label::new("Selected class"));
+        ui.image((selected.texture().id(), selected.texture().size_vec2()));
+        // });
         ui.add(egui::Label::new("Select class:"));
         ui.horizontal_wrapped(|ui| {
             for i in 0..self.classes.len() {
