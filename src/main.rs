@@ -39,8 +39,8 @@ struct MyApp {
     delta: u8,
     corridor: Corridor,
     reference_vectors: Vec<ClassData>,
-    sk: Vec<(Vec<u32>, (Vec<u32>, u32))>,
-    distances: Vec<u32>,
+    sk: Vec<painter::SK>,
+    widget_stauses: std::collections::HashMap<String, bool>,
 }
 
 impl eframe::App for MyApp {
@@ -51,23 +51,35 @@ impl eframe::App for MyApp {
             ..Default::default()
         };
 
+        egui::TopBottomPanel::top("Widgets")
+            .frame(frame)
+            .show(ctx, |ui| {
+                self.add_widgets_controls(ui);
+            });
+
         egui::TopBottomPanel::bottom(egui::Id::new("Loader"))
             .frame(frame)
             .show(ctx, |ui| {
                 self.add_image_selector(ui);
             });
 
-        egui::Window::new("2d").show(ctx, |ui| {
-            // frame.show(ui, |ui| {
-            painter::paint(ui, &self.sk);
-            // });
+        self.sk.iter().enumerate().for_each(|(i, sk)| {
+            egui::Window::new(format!("{i}->{}", sk.closest))
+                .default_size(egui::vec2(250.0, 200.0))
+                .min_width(250.0)
+                .min_height(200.0)
+                .show(ctx, |ui| {
+                    sk.paint(ui);
+                });
         });
 
-        egui::Window::new("Information")
-            .resizable(false)
-            .show(ctx, |ui| {
-                frame.show(ui, |ui| self.add_stats(ui));
-            });
+        if self.widget_stauses.get("Information").unwrap_or(&false) == &true {
+            egui::Window::new("Information")
+                .resizable(false)
+                .show(ctx, |ui| {
+                    frame.show(ui, |ui| self.add_stats(ui));
+                });
+        }
 
         if !self.classes.is_empty() {
             egui::Window::new("Settings")
@@ -84,31 +96,33 @@ impl eframe::App for MyApp {
                     });
                 });
 
-            egui::Window::new("SK").show(ctx, |ui| {
-                self.sk.iter().enumerate().for_each(|(i, sk)| {
-                    ui.add(egui::Label::new(format!("SK{i}[1,1..N]")));
+            if !self.sk.is_empty() {
+                egui::Window::new("SK").show(ctx, |ui| {
+                    self.sk.iter().enumerate().for_each(|(i, sk)| {
+                        ui.add(egui::Label::new(format!("SK{i}[1,1..N]")));
 
-                    egui::ScrollArea::horizontal()
-                        .id_source(format!("sk{i}.0"))
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                sk.0.iter().for_each(|x| {
-                                    ui.label(x.to_string());
+                        egui::ScrollArea::horizontal()
+                            .id_source(format!("sk{i}.0"))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    sk.distances_to_center.iter().for_each(|x| {
+                                        ui.label(x.to_string());
+                                    });
                                 });
                             });
-                        });
-                    ui.add(egui::Label::new(format!("SK{i}[2,1..N]")));
-                    egui::ScrollArea::horizontal()
-                        .id_source(format!("sk{i}.1"))
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                sk.1 .0.iter().for_each(|x| {
-                                    ui.label(x.to_string());
+                        ui.add(egui::Label::new(format!("SK{i}[2,1..N]")));
+                        egui::ScrollArea::horizontal()
+                            .id_source(format!("sk{i}.1"))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    sk.distances_to_closest.iter().for_each(|x| {
+                                        ui.label(x.to_string());
+                                    });
                                 });
                             });
-                        });
+                    });
                 });
-            });
+            }
 
             egui::Window::new("Classes")
                 .resizable(false)
@@ -157,30 +171,44 @@ impl eframe::App for MyApp {
 
 impl MyApp {
     fn calculate_code_distances(&mut self) {
+        if self.classes.len() <= 1 {
+            return;
+        }
+
         self.sk = Vec::with_capacity(self.classes.len());
 
         for index in 0..self.matrices.len() {
             let center = self.reference_vectors[index].bytes();
 
-            self.sk.push((
-                hamming::distances_between(self.matrices[index].bytes(), center),
-                self.reference_vectors
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| i != &index)
-                    .map(|(i, reference_vector)| {
+            let distances_to_center =
+                hamming::distances_between(self.matrices[index].bytes(), center);
+            let (distances_to_closest, distance, closest) = self
+                .reference_vectors
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| i != &index)
+                .map(|(i, reference_vector)| {
+                    (
+                        i,
+                        hamming::distance_between(reference_vector.bytes(), center),
+                    )
+                })
+                .min_by_key(|(_, distance)| *distance)
+                .map_or_else(
+                    || (Vec::new(), 0, 0),
+                    |(closest, distance)| {
                         (
-                            i,
-                            hamming::distance_between(reference_vector.bytes(), center),
-                        )
-                    })
-                    .min_by_key(|(_, distance)| *distance)
-                    .map_or_else(Vec::new, |(closest, distance)| {
-                        return (
                             hamming::distances_between(self.matrices[closest].bytes(), center),
                             distance,
-                        );
-                    }),
+                            closest,
+                        )
+                    },
+                );
+            self.sk.push(painter::SK::new(
+                distances_to_center,
+                distances_to_closest,
+                distance,
+                closest,
             ));
         }
     }
@@ -263,12 +291,19 @@ impl MyApp {
         }
     }
 
+    fn set_base_class(&mut self, class: usize, ui: &mut egui::Ui) {
+        self.selected_class = class;
+        self.corridor.set_base_class(
+            self.classes[self.selected_class].bytes(),
+            self.size.unwrap(),
+        );
+        self.calculate_binary_matrices(ui.ctx());
+    }
+
     fn add_controls(&mut self, ui: &mut egui::Ui) {
-        // ui.vertical_centered(|ui| {
         let selected = &self.classes[self.selected_class];
         ui.add(egui::Label::new("Selected class"));
         ui.image((selected.texture().id(), selected.texture().size_vec2()));
-        // });
         ui.add(egui::Label::new("Select class:"));
         ui.horizontal_wrapped(|ui| {
             for i in 0..self.classes.len() {
@@ -279,12 +314,7 @@ impl MyApp {
                     ))
                     .clicked()
                 {
-                    self.selected_class = i;
-                    self.corridor.set_base_class(
-                        self.classes[self.selected_class].bytes(),
-                        self.size.unwrap(),
-                    );
-                    self.calculate_binary_matrices(ui.ctx());
+                    self.set_base_class(i, ui);
                 }
             }
         });
@@ -298,6 +328,11 @@ impl MyApp {
                 self.calculate_binary_matrices(ui.ctx());
             }
         });
+
+        if ui.button("Delete").clicked() {
+            self.classes.remove(self.selected_class);
+            self.set_base_class(0, ui);
+        }
     }
 
     fn add_stats(&self, ui: &mut egui::Ui) {
@@ -365,5 +400,21 @@ impl MyApp {
         self.classes.push(ClassData::new(vec, texture));
 
         Ok(())
+    }
+
+    fn add_widgets_controls(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("Information").clicked() {
+                let status = self.widget_stauses.get_mut("Information");
+                match status {
+                    Some(status) => {
+                        *status = !*status;
+                    }
+                    None => {
+                        self.widget_stauses.insert("Information".to_string(), true);
+                    }
+                }
+            }
+        });
     }
 }
