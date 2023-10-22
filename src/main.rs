@@ -51,7 +51,7 @@ impl eframe::App for MyApp {
             ..Default::default()
         };
 
-        egui::TopBottomPanel::top("Widgets")
+        egui::SidePanel::right("Widgets")
             .frame(frame)
             .show(ctx, |ui| {
                 self.add_widgets_controls(ui);
@@ -63,15 +63,18 @@ impl eframe::App for MyApp {
                 self.add_image_selector(ui);
             });
 
-        self.sk.iter().enumerate().for_each(|(i, sk)| {
-            egui::Window::new(format!("{i}->{}", sk.closest))
-                .default_size(egui::vec2(250.0, 200.0))
-                .min_width(250.0)
-                .min_height(200.0)
-                .show(ctx, |ui| {
-                    sk.paint(ui);
-                });
-        });
+        if self.widget_stauses.get("2D").unwrap_or(&false) == &true {
+            self.sk.iter().enumerate().for_each(|(i, sk)| {
+                egui::Window::new(format!("2D {i}->{}", sk.closest))
+                    .id(egui::Id::new(format!("2D{i}")))
+                    .default_size(egui::vec2(250.0, 200.0))
+                    .min_width(250.0)
+                    .min_height(200.0)
+                    .show(ctx, |ui| {
+                        sk.paint(ui);
+                    });
+            });
+        }
 
         if self.widget_stauses.get("Information").unwrap_or(&false) == &true {
             egui::Window::new("Information")
@@ -82,21 +85,25 @@ impl eframe::App for MyApp {
         }
 
         if !self.classes.is_empty() {
-            egui::Window::new("Settings")
-                .resizable(false)
-                .show(ctx, |ui| {
-                    frame.show(ui, |ui| self.add_controls(ui));
-                });
-
-            egui::Window::new("Plot")
-                .default_size(egui::vec2(400.0, 200.0))
-                .show(ctx, |ui| {
-                    frame.show(ui, |ui| {
-                        self.corridor.draw_corridor_plot(ui);
+            if self.widget_stauses.get("Settings").unwrap_or(&false) == &true {
+                egui::Window::new("Settings")
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        frame.show(ui, |ui| self.add_controls(ui));
                     });
-                });
+            }
 
-            if !self.sk.is_empty() {
+            if self.widget_stauses.get("Plot").unwrap_or(&false) == &true {
+                egui::Window::new("Plot")
+                    .default_size(egui::vec2(400.0, 200.0))
+                    .show(ctx, |ui| {
+                        frame.show(ui, |ui| {
+                            self.corridor.draw_corridor_plot(ui);
+                        });
+                    });
+            }
+
+            if self.widget_stauses.get("SK").unwrap_or(&false) == &true && !self.sk.is_empty() {
                 egui::Window::new("SK").show(ctx, |ui| {
                     self.sk.iter().enumerate().for_each(|(i, sk)| {
                         ui.add(egui::Label::new(format!("SK{i}[1,1..N]")));
@@ -124,47 +131,52 @@ impl eframe::App for MyApp {
                 });
             }
 
-            egui::Window::new("Classes")
-                .resizable(false)
-                .show(ctx, |ui| {
-                    egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                        frame.show(ui, |ui| {
-                            ui.add(egui::Label::new("Classes"));
-
-                            ui.horizontal_wrapped(|ui| {
-                                self.classes.iter().for_each(|matrix| {
-                                    ui.image((matrix.texture().id(), matrix.texture().size_vec2()));
-                                });
-                            });
-
-                            if !self.matrices.is_empty() {
-                                ui.add(egui::Label::new("Binary matrices"));
+            if self.widget_stauses.get("Classes").unwrap_or(&false) == &true {
+                egui::Window::new("Classes")
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        egui::ScrollArea::new([true, true]).show(ui, |ui| {
+                            frame.show(ui, |ui| {
+                                ui.add(egui::Label::new("Classes"));
 
                                 ui.horizontal_wrapped(|ui| {
-                                    self.matrices.iter().for_each(|matrix| {
+                                    self.classes.iter().for_each(|matrix| {
                                         ui.image((
                                             matrix.texture().id(),
                                             matrix.texture().size_vec2(),
                                         ));
                                     });
                                 });
-                            }
 
-                            if !self.reference_vectors.is_empty() {
-                                ui.add(egui::Label::new("Reference vectors"));
+                                if !self.matrices.is_empty() {
+                                    ui.add(egui::Label::new("Binary matrices"));
 
-                                ui.horizontal_wrapped(|ui| {
-                                    self.reference_vectors.iter().for_each(|vector| {
-                                        ui.image((
-                                            vector.texture().id(),
-                                            vector.texture().size_vec2(),
-                                        ));
+                                    ui.horizontal_wrapped(|ui| {
+                                        self.matrices.iter().for_each(|matrix| {
+                                            ui.image((
+                                                matrix.texture().id(),
+                                                matrix.texture().size_vec2(),
+                                            ));
+                                        });
                                     });
-                                });
-                            }
+                                }
+
+                                if !self.reference_vectors.is_empty() {
+                                    ui.add(egui::Label::new("Reference vectors"));
+
+                                    ui.horizontal_wrapped(|ui| {
+                                        self.reference_vectors.iter().for_each(|vector| {
+                                            ui.image((
+                                                vector.texture().id(),
+                                                vector.texture().size_vec2(),
+                                            ));
+                                        });
+                                    });
+                                }
+                            });
                         });
                     });
-                });
+            }
         }
     }
 }
@@ -403,18 +415,20 @@ impl MyApp {
     }
 
     fn add_widgets_controls(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            if ui.button("Information").clicked() {
-                let status = self.widget_stauses.get_mut("Information");
-                match status {
-                    Some(status) => {
-                        *status = !*status;
-                    }
-                    None => {
-                        self.widget_stauses.insert("Information".to_string(), true);
-                    }
-                }
-            }
+        ui.vertical(|ui| {
+            self.add_button("Information", ui);
+            self.add_button("Settings", ui);
+            self.add_button("Classes", ui);
+            self.add_button("Plot", ui);
+            self.add_button("SK", ui);
+            self.add_button("2D", ui);
         });
+    }
+
+    fn add_button(&mut self, label: &str, ui: &mut egui::Ui) {
+        ui.checkbox(
+            self.widget_stauses.entry(label.to_string()).or_default(),
+            label,
+        );
     }
 }
