@@ -2,48 +2,62 @@ use eframe::egui::{pos2, Color32, Pos2, Sense, Ui};
 
 #[derive(Debug, Default)]
 pub struct SK {
-    pub distances_to_center: Vec<u32>,
+    pub distances_to_self: Vec<u32>,
     pub distances_to_closest: Vec<u32>,
+    pub distances_from_closest_to_itself: Vec<u32>,
+    pub distances_from_closest: Vec<u32>,
     pub distance: u32,
     pub closest: usize,
-    coordinates: Vec<Pos2>,
+    self_realizations: Vec<Pos2>,
+    closest_realizations: Vec<Pos2>,
 }
 
 impl SK {
     pub fn new(
-        distances_to_center: Vec<u32>,
+        distances_to_self: Vec<u32>,
         distances_to_closest: Vec<u32>,
+        distances_from_closest_to_itself: Vec<u32>,
+        distances_from_closest: Vec<u32>,
         distance: u32,
         closest: usize,
     ) -> Self {
-        let coordinates =
-            Self::calculate_coordinates(&distances_to_center, &distances_to_closest, distance);
+        let self_realizations =
+            Self::calculate_coordinates(&distances_to_self, &distances_from_closest, distance);
+
+        let closest_realizations = Self::calculate_coordinates(
+            &distances_to_closest,
+            &distances_from_closest_to_itself,
+            distance,
+        );
 
         Self {
-            distances_to_center,
+            distances_to_self,
             distances_to_closest,
+            distances_from_closest_to_itself,
+            distances_from_closest,
             distance,
             closest,
-            coordinates,
+            self_realizations,
+            closest_realizations,
         }
     }
 
     fn calculate_coordinates(
-        distances_to_center: &[u32],
-        distances_to_closest: &[u32],
+        distances_to_self: &[u32],
+        distances_from_closest: &[u32],
         distance: u32,
     ) -> Vec<Pos2> {
         if distance == 0 {
             return Vec::new();
         }
 
-        let mut coordinates: Vec<Pos2> = Vec::with_capacity(distances_to_center.len());
+        let mut coordinates: Vec<Pos2> = Vec::with_capacity(distances_to_self.len());
 
-        for i in 0..distances_to_center.len() {
+        for i in 0..distances_to_self.len() {
             let distance = distance as f32;
 
-            let rs = distances_to_center[i] as f32; // Disctance to center of self class
-            let rc = distances_to_closest[i] as f32; // Distance to center of closest class
+            let rs = distances_to_self[i] as f32; // Disctance to center of self class
+            let rc = distances_from_closest[i] as f32; // Distance to center of closest class
 
             let x = (distance.powi(2) - rc.powi(2) + rs.powi(2)) / (2.0 * distance);
             let y2 = rs.powi(2) - x.powi(2);
@@ -64,26 +78,7 @@ impl SK {
             return;
         }
 
-        let min_x = self
-            .coordinates
-            .iter()
-            .filter(|c| c.x < 0.0)
-            .min_by(|c1, c2| c1.x.total_cmp(&c2.x))
-            .map_or(0.0, |c| c.x);
-
-        let max_x = self
-            .coordinates
-            .iter()
-            .filter(|c| c.x > self.distance as f32)
-            .max_by(|c1, c2| c1.x.total_cmp(&c2.x))
-            .map_or(self.distance as f32, |c| c.x);
-
-        let max_y = self
-            .coordinates
-            .iter()
-            .filter(|c| c.y.is_finite())
-            .max_by(|c1, c2| c1.y.total_cmp(&c2.y))
-            .map_or(0.0, |c| c.y);
+        let ((min_x, _), (max_x, max_y)) = self.find_min_max();
 
         let size = ui.available_size();
         let (response, painter) = ui.allocate_painter(size, Sense::hover());
@@ -96,20 +91,67 @@ impl SK {
             |a, b| a.total_cmp(b),
         );
 
-        let radius = 5.0 * k;
-        let stroke_width = 1.0 * k;
+        let radius = 1.0 * k;
+        let stroke_width = 1.0;
         let padding_y = left_top.y + radius + stroke_width;
         let padding_x = left_top.x + radius + stroke_width;
 
         let center = pos2(padding_x - min_x * k, padding_y);
-        painter.circle_stroke(center, radius, (stroke_width, Color32::YELLOW));
+        painter.circle_filled(center, radius, Color32::YELLOW);
 
         let center = pos2(padding_x + (self.distance as f32 - min_x) * k, padding_y);
-        painter.circle_stroke(center, radius, (stroke_width, Color32::RED));
+        painter.circle_filled(center, radius, Color32::RED);
 
-        self.coordinates.iter().for_each(|c| {
+        self.self_realizations.iter().for_each(|c| {
             let center = pos2(padding_x + (c.x - min_x) * k, padding_y + c.y * k);
-            painter.circle_stroke(center, 1.0, (stroke_width, Color32::GREEN));
+            painter.circle_stroke(center, radius, (stroke_width, Color32::YELLOW));
         });
+
+        self.closest_realizations.iter().for_each(|c| {
+            let center = pos2(padding_x + (c.x - min_x) * k, padding_y + c.y * k);
+            painter.circle_stroke(center, radius, (stroke_width, Color32::RED));
+        });
+    }
+
+    fn find_min_max(&self) -> ((f32, f32), (f32, f32)) {
+        let mut min_coordinates = (0.0, 0.0);
+        let mut max_coordinates = (self.distance as f32, 0.0);
+
+        for i in 0..self.self_realizations.len() {
+            let self_realization = self.self_realizations[i];
+            let closest_realization = self.closest_realizations[i];
+
+            min_coordinates.0 = if self_realization.x < min_coordinates.0
+                && self_realization.x < closest_realization.x
+            {
+                self_realization.x
+            } else if closest_realization.x < min_coordinates.0 {
+                closest_realization.x
+            } else {
+                min_coordinates.0
+            };
+
+            max_coordinates.0 = if self_realization.x > max_coordinates.0
+                && self_realization.x > closest_realization.x
+            {
+                self_realization.x
+            } else if closest_realization.x > max_coordinates.0 {
+                closest_realization.x
+            } else {
+                max_coordinates.0
+            };
+
+            max_coordinates.1 = if self_realization.y > max_coordinates.1
+                && self_realization.y > closest_realization.y
+            {
+                self_realization.y
+            } else if closest_realization.y > max_coordinates.1 {
+                closest_realization.y
+            } else {
+                max_coordinates.1
+            };
+        }
+
+        (min_coordinates, max_coordinates)
     }
 }

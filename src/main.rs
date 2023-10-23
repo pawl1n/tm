@@ -106,23 +106,49 @@ impl eframe::App for MyApp {
             if self.widget_stauses.get("SK").unwrap_or(&false) == &true && !self.sk.is_empty() {
                 egui::Window::new("SK").show(ctx, |ui| {
                     self.sk.iter().enumerate().for_each(|(i, sk)| {
-                        ui.add(egui::Label::new(format!("SK{i}[1,1..N]")));
+                        ui.add(egui::Label::new(format!("SK[1,{i}]")));
 
                         egui::ScrollArea::horizontal()
                             .id_source(format!("sk{i}.0"))
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
-                                    sk.distances_to_center.iter().for_each(|x| {
+                                    sk.distances_to_self.iter().for_each(|x| {
                                         ui.label(x.to_string());
                                     });
                                 });
                             });
-                        ui.add(egui::Label::new(format!("SK{i}[2,1..N]")));
+                        ui.add(egui::Label::new(format!("SK[2,{i}]")));
                         egui::ScrollArea::horizontal()
                             .id_source(format!("sk{i}.1"))
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     sk.distances_to_closest.iter().for_each(|x| {
+                                        ui.label(x.to_string());
+                                    });
+                                });
+                            });
+                    });
+                });
+
+                egui::Window::new("SK_PARA").show(ctx, |ui| {
+                    self.sk.iter().enumerate().for_each(|(i, sk)| {
+                        ui.add(egui::Label::new(format!("SK_PARA[1,{i}]")));
+
+                        egui::ScrollArea::horizontal()
+                            .id_source(format!("sk_para{i}.0"))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    sk.distances_from_closest_to_itself.iter().for_each(|x| {
+                                        ui.label(x.to_string());
+                                    });
+                                });
+                            });
+                        ui.add(egui::Label::new(format!("SK_PARA[2,{i}]")));
+                        egui::ScrollArea::horizontal()
+                            .id_source(format!("sk_para{i}.1"))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    sk.distances_from_closest.iter().for_each(|x| {
                                         ui.label(x.to_string());
                                     });
                                 });
@@ -216,9 +242,19 @@ impl MyApp {
                         )
                     },
                 );
+
+            let center = self.reference_vectors[closest].bytes();
+
+            let distances_from_closest_to_itself =
+                hamming::distances_between(self.matrices[closest].bytes(), center);
+            let distances_from_closest =
+                hamming::distances_between(self.matrices[index].bytes(), center);
+
             self.sk.push(painter::SK::new(
                 distances_to_center,
                 distances_to_closest,
+                distances_from_closest_to_itself,
+                distances_from_closest,
                 distance,
                 closest,
             ));
