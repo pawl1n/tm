@@ -209,11 +209,11 @@ impl eframe::App for MyApp {
 
 impl MyApp {
     fn calculate_code_distances(&mut self) {
+        self.sk = Vec::with_capacity(self.classes.len());
+
         if self.classes.len() <= 1 {
             return;
         }
-
-        self.sk = Vec::with_capacity(self.classes.len());
 
         for index in 0..self.matrices.len() {
             let center = self.reference_vectors[index].bytes();
@@ -278,9 +278,9 @@ impl MyApp {
                         .map(|(i, x)| {
                             let index = i.rem_euclid(attributes);
                             if *x > lower[index] && *x < upper[index] {
-                                255
+                                u8::MAX
                             } else {
-                                0
+                                u8::MIN
                             }
                         })
                         .collect();
@@ -314,7 +314,7 @@ impl MyApp {
                         let mut count = 0;
 
                         for j in 0..realizations {
-                            if matrix.bytes()[i + j * attributes] == 255 {
+                            if matrix.bytes()[i + j * attributes] == u8::MAX {
                                 count += 1;
                             }
                         }
@@ -369,7 +369,7 @@ impl MyApp {
         ui.horizontal(|ui| {
             ui.add(egui::Label::new("Delta"));
             if ui
-                .add(egui::Slider::new(&mut self.delta, 0..=255))
+                .add(egui::Slider::new(&mut self.delta, u8::MIN..=u8::MAX))
                 .changed()
             {
                 self.corridor.delta(self.delta);
