@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 mod class_data;
 mod corridor;
+mod criteria;
 mod hamming;
 mod painter;
 
@@ -41,6 +42,7 @@ struct MyApp {
     reference_vectors: Vec<ClassData>,
     sk: Vec<painter::SK>,
     widget_stauses: std::collections::HashMap<String, bool>,
+    criterias: Vec<criteria::Criteria>,
 }
 
 impl eframe::App for MyApp {
@@ -208,6 +210,16 @@ impl eframe::App for MyApp {
 }
 
 impl MyApp {
+    fn calculate_criteria(&mut self) {
+        let (_, number_of_realizations) = self.size.expect("Expected size");
+
+        self.criterias = self
+            .sk
+            .iter()
+            .map(|sk| criteria::Criteria::new(sk, number_of_realizations))
+            .collect();
+    }
+
     fn calculate_code_distances(&mut self) {
         self.sk = Vec::with_capacity(self.classes.len());
 
@@ -298,6 +310,7 @@ impl MyApp {
 
             self.calculate_reference_vectors(ctx);
             self.calculate_code_distances();
+            self.calculate_criteria();
         }
     }
 
