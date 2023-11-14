@@ -65,8 +65,6 @@ impl Criteria {
     }
 
     fn shannon_criteria(characteristics: &[Characteristics]) -> Vec<f32> {
-        let error: f32 = 0.00001;
-
         characteristics
             .iter()
             .map(|c| {
@@ -78,16 +76,8 @@ impl Criteria {
                 let mut divisor1 = a + d2;
                 let mut divisor2 = d1 + b;
 
-                if divisor1 == 0.0 {
-                    a += error;
-                    d2 += error;
-                    divisor1 += error;
-                }
-
-                if divisor2 == 0.0 {
-                    b += error;
-                    d1 += error;
-                    divisor2 += error;
+                if divisor1 == 0.0 || divisor2 == 0.0 {
+                    return f32::INFINITY;
                 }
 
                 1.0 + 0.5
