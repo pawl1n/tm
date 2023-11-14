@@ -7,7 +7,6 @@ pub struct Criteria {
     pub closest_realizations_in_closest: Vec<usize>,
     pub self_realizations_in_closest: Vec<usize>,
     pub self_characteristics: Vec<Characteristics>,
-    // pub closest_characteristics: Vec<Characteristics>,
     pub kullback_criteria: Vec<f32>,
     pub shannon_criteria: Vec<f32>,
 }
@@ -41,12 +40,6 @@ impl Criteria {
             number_of_realizations,
         );
 
-        // let closest_characteristics = Self::calculate_characteristics(
-        //     &closest_realizations_in_closest,
-        //     &self_realizations_in_closest,
-        //     number_of_realizations,
-        // );
-
         let kullback_criteria = Self::kullback_criteria(&self_characteristics);
         let shannon_criteria = Self::shannon_criteria(&self_characteristics);
 
@@ -56,7 +49,6 @@ impl Criteria {
             closest_realizations_in_closest,
             self_realizations_in_closest,
             self_characteristics,
-            // closest_characteristics,
             kullback_criteria,
             shannon_criteria,
         }
