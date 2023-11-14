@@ -9,7 +9,7 @@ pub struct Criteria {
     pub self_characteristics: Vec<Characteristics>,
     // pub closest_characteristics: Vec<Characteristics>,
     pub kullback_criteria: Vec<f32>,
-    pub sheffer_criteria: Vec<f32>,
+    pub shannon_criteria: Vec<f32>,
 }
 
 #[derive(Debug, Default)]
@@ -48,7 +48,7 @@ impl Criteria {
         // );
 
         let kullback_criteria = Self::kullback_criteria(&self_characteristics);
-        let sheffer_criteria = Self::sheffer_criteria(&self_characteristics);
+        let shannon_criteria = Self::shannon_criteria(&self_characteristics);
 
         Self {
             self_realizations,
@@ -58,7 +58,7 @@ impl Criteria {
             self_characteristics,
             // closest_characteristics,
             kullback_criteria,
-            sheffer_criteria,
+            shannon_criteria,
         }
     }
 
@@ -72,7 +72,7 @@ impl Criteria {
             .collect()
     }
 
-    fn sheffer_criteria(characteristics: &[Characteristics]) -> Vec<f32> {
+    fn shannon_criteria(characteristics: &[Characteristics]) -> Vec<f32> {
         let error: f32 = 0.00001;
 
         characteristics
