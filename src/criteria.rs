@@ -73,19 +73,36 @@ impl Criteria {
     }
 
     fn sheffer_criteria(characteristics: &[Characteristics]) -> Vec<f32> {
+        let error: f32 = 0.00001;
+
         characteristics
             .iter()
             .map(|c| {
-                let a = c.alpha.max(0.000001);
-                let b = c.beta.max(0.000001);
-                let d1 = c.d1.max(0.000001);
-                let d2 = c.d2.max(0.000001);
+                let mut a = c.alpha;
+                let mut b = c.beta;
+                let mut d1 = c.d1;
+                let mut d2 = c.d2;
+
+                let mut divisor1 = a + d2;
+                let mut divisor2 = d1 + b;
+
+                if divisor1 == 0.0 {
+                    a += error;
+                    d2 += error;
+                    divisor1 += error;
+                }
+
+                if divisor2 == 0.0 {
+                    b += error;
+                    d1 += error;
+                    divisor2 += error;
+                }
 
                 1.0 + 0.5
-                    * ((a / (a + d2)) * (a / (a + d2)).log2()
-                        + (d1 / (d1 + b)) * (d1 / (d1 + b)).log2()
-                        + (b / (d1 + b)) * (b / (d1 + b)).log2()
-                        + (d2 / (a + d2)) * (d2 / (a + d2)).log2())
+                    * ((a / divisor1) * (a / divisor1).log2()
+                        + (d1 / divisor2) * (d1 / divisor2).log2()
+                        + (b / divisor2) * (b / divisor2).log2()
+                        + (d2 / divisor1) * (d2 / divisor1).log2())
             })
             .collect()
     }
