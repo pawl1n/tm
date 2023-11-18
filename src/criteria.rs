@@ -68,13 +68,13 @@ impl Criteria {
         characteristics
             .iter()
             .map(|c| {
-                let mut a = c.alpha;
-                let mut b = c.beta;
-                let mut d1 = c.d1;
-                let mut d2 = c.d2;
+                let a = c.alpha;
+                let b = c.beta;
+                let d1 = c.d1;
+                let d2 = c.d2;
 
-                let mut divisor1 = a + d2;
-                let mut divisor2 = d1 + b;
+                let divisor1 = a + d2;
+                let divisor2 = d1 + b;
 
                 if divisor1 == 0.0 || divisor2 == 0.0 {
                     return f32::INFINITY;
