@@ -1,3 +1,4 @@
+use super::draw::Draw;
 use eframe::egui::Ui;
 use egui_plot::{Legend, Line, Plot};
 
@@ -77,12 +78,8 @@ impl Corridor {
     }
 }
 
-pub trait DrawPlot {
-    fn draw_corridor_plot(&self, ui: &mut Ui);
-}
-
-impl DrawPlot for Corridor {
-    fn draw_corridor_plot(&self, ui: &mut Ui) {
+impl Draw for Corridor {
+    fn draw(&self, ui: &mut Ui) {
         Plot::new("Corridor")
             .legend(Legend::default())
             .show(ui, |ui| {

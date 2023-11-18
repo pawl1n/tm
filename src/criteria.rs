@@ -1,22 +1,23 @@
-use super::painter::SK;
+use crate::draw::Draw;
+use crate::painter::SK;
+
+use eframe::egui::Ui;
+use egui_plot::{Legend, Line, Plot, PlotPoints};
 
 #[derive(Debug, Default)]
 pub struct Criteria {
-    pub self_realizations: Vec<usize>,
-    pub closest_realizations: Vec<usize>,
-    pub closest_realizations_in_closest: Vec<usize>,
-    pub self_realizations_in_closest: Vec<usize>,
-    pub self_characteristics: Vec<Characteristics>,
-    pub kullback_criteria: Vec<f32>,
-    pub shannon_criteria: Vec<f32>,
+    pub characteristics: Vec<Characteristics>,
+    pub kullback_criteria: Vec<f64>,
+    pub shannon_criteria: Vec<f64>,
+    working_space: Vec<usize>,
 }
 
 #[derive(Debug, Default)]
 pub struct Characteristics {
-    pub d1: f32,
-    pub beta: f32,
-    pub alpha: f32,
-    pub d2: f32,
+    pub d1: f64,
+    pub beta: f64,
+    pub alpha: f64,
+    pub d2: f64,
 }
 
 impl Criteria {
@@ -27,57 +28,67 @@ impl Criteria {
             Self::calculate_number_of_self_realizations(&sk.distances_to_self, max_radius);
         let closest_realizations =
             Self::calculate_number_of_self_realizations(&sk.distances_to_closest, max_radius);
-        let closest_realizations_in_closest = Self::calculate_number_of_self_realizations(
-            &sk.distances_from_closest_to_itself,
-            max_radius,
-        );
-        let self_realizations_in_closest =
-            Self::calculate_number_of_self_realizations(&sk.distances_from_closest, max_radius);
+        // let closest_realizations_in_closest = Self::calculate_number_of_self_realizations(
+        //     &sk.distances_from_closest_to_itself,
+        //     max_radius,
+        // );
+        // let self_realizations_in_closest =
+        //     Self::calculate_number_of_self_realizations(&sk.distances_from_closest, max_radius);
 
-        let self_characteristics = Self::calculate_characteristics(
+        let characteristics = Self::calculate_characteristics(
             &self_realizations,
             &closest_realizations,
             number_of_realizations,
         );
 
-        let kullback_criteria = Self::kullback_criteria(&self_characteristics);
-        let shannon_criteria = Self::shannon_criteria(&self_characteristics);
+        let kullback_criteria = Self::kullback_criteria(&characteristics);
+        let shannon_criteria = Self::shannon_criteria(&characteristics);
+
+        let working_space = characteristics
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.d1 >= 0.5 && c.d2 >= 0.5)
+            .map(|(i, _)| i)
+            .collect();
 
         Self {
-            self_realizations,
-            closest_realizations,
-            closest_realizations_in_closest,
-            self_realizations_in_closest,
-            self_characteristics,
+            characteristics,
             kullback_criteria,
             shannon_criteria,
+            working_space,
         }
     }
 
-    fn kullback_criteria(characteristics: &[Characteristics]) -> Vec<f32> {
+    fn kullback_criteria(characteristics: &[Characteristics]) -> Vec<f64> {
         characteristics
             .iter()
-            .map(|c| {
+            .enumerate()
+            .map(|(_, c)| {
                 ((2.0 - (c.alpha + c.beta)) / (c.alpha + c.beta)).log2()
                     * (1.0 - (c.alpha + c.beta))
             })
             .collect()
     }
 
-    fn shannon_criteria(characteristics: &[Characteristics]) -> Vec<f32> {
+    fn shannon_criteria(characteristics: &[Characteristics]) -> Vec<f64> {
         characteristics
             .iter()
-            .map(|c| {
+            .enumerate()
+            .map(|(_, c)| {
                 let a = c.alpha;
                 let b = c.beta;
                 let d1 = c.d1;
                 let d2 = c.d2;
 
-                let divisor1 = a + d2;
-                let divisor2 = d1 + b;
+                let mut divisor1 = a + d2;
+                let mut divisor2 = d1 + b;
 
-                if divisor1 == 0.0 || divisor2 == 0.0 {
-                    return f32::INFINITY;
+                if divisor1 == 0.0 {
+                    divisor1 = 0.000001;
+                }
+
+                if divisor2 == 0.0 {
+                    divisor2 = 0.000001;
                 }
 
                 1.0 + 0.5
@@ -97,9 +108,9 @@ impl Criteria {
         let mut characteristics: Vec<Characteristics> = Vec::new();
 
         for i in 0..realizations.len() {
-            let d1 = realizations[i] as f32 / number_of_realizations as f32;
+            let d1 = realizations[i] as f64 / number_of_realizations as f64;
             let alpha = 1.0 - d1;
-            let beta = closest_realizations[i] as f32 / number_of_realizations as f32;
+            let beta = closest_realizations[i] as f64 / number_of_realizations as f64;
             let d2 = 1.0 - beta;
 
             characteristics.push(Characteristics {
@@ -136,5 +147,50 @@ impl Criteria {
         }
 
         number_of_realizations
+    }
+}
+
+impl Draw for Criteria {
+    fn draw(&self, ui: &mut Ui) {
+        let available_width = ui.max_rect().width() - 10.0;
+        let available_height = ui.max_rect().height() - 10.0;
+
+        ui.horizontal(|ui| {
+            ui.set_height(available_height);
+
+            Plot::new("Kullback")
+                .legend(Legend::default())
+                .width(available_width / 2.0)
+                .show(ui, |ui| {
+                    ui.line(
+                        Line::new(PlotPoints::from_ys_f64(&self.kullback_criteria))
+                            .name("Kullback"),
+                    );
+
+                    let points: PlotPoints = self
+                        .working_space
+                        .iter()
+                        .map(|&i| [i as f64, self.kullback_criteria[i]])
+                        .collect();
+                    ui.line(Line::new(points).name("Working space").fill(0.0));
+                });
+
+            Plot::new("Shannon")
+                .legend(Legend::default())
+                .width(available_width / 2.0)
+                .show(ui, |ui| {
+                    ui.line(
+                        Line::new(PlotPoints::from_ys_f64(&self.shannon_criteria)).name("Shannon"),
+                    );
+
+                    let points: PlotPoints = self
+                        .working_space
+                        .iter()
+                        .map(|&i| [i as f64, self.shannon_criteria[i]])
+                        .collect();
+
+                    ui.line(Line::new(points).name("Working space").fill(0.0));
+                });
+        });
     }
 }
