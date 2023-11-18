@@ -1,5 +1,4 @@
 use crate::draw::Draw;
-use crate::painter::SK;
 
 use eframe::egui::Ui;
 use egui_plot::{Legend, Line, Plot, PlotPoints};
@@ -10,6 +9,8 @@ pub struct Criteria {
     pub kullback_criteria: Vec<f64>,
     pub shannon_criteria: Vec<f64>,
     working_space: Vec<usize>,
+    pub r_kullback: Vec<f64>,
+    pub r_shannon: Vec<f64>,
 }
 
 #[derive(Debug, Default)]
@@ -21,13 +22,17 @@ pub struct Characteristics {
 }
 
 impl Criteria {
-    pub fn new(sk: &SK, number_of_realizations: usize) -> Self {
-        let max_radius = Self::calculate_max_radius(sk);
+    pub fn new(
+        distances_to_self: &[u32],
+        distances_to_closest: &[u32],
+        number_of_realizations: usize,
+    ) -> Self {
+        let max_radius = Self::calculate_max_radius(distances_to_self, distances_to_closest);
 
         let self_realizations =
-            Self::calculate_number_of_self_realizations(&sk.distances_to_self, max_radius);
+            Self::calculate_number_of_self_realizations(distances_to_self, max_radius);
         let closest_realizations =
-            Self::calculate_number_of_self_realizations(&sk.distances_to_closest, max_radius);
+            Self::calculate_number_of_self_realizations(distances_to_closest, max_radius);
         // let closest_realizations_in_closest = Self::calculate_number_of_self_realizations(
         //     &sk.distances_from_closest_to_itself,
         //     max_radius,
@@ -44,19 +49,32 @@ impl Criteria {
         let kullback_criteria = Self::kullback_criteria(&characteristics);
         let shannon_criteria = Self::shannon_criteria(&characteristics);
 
-        let working_space = characteristics
+        let working_space: Vec<usize> = characteristics
             .iter()
             .enumerate()
             .filter(|(_, c)| c.d1 >= 0.5 && c.d2 >= 0.5)
             .map(|(i, _)| i)
             .collect();
 
+        let r_kullback = Self::find_radius(&kullback_criteria, &working_space);
+        let r_shannon = Self::find_radius(&shannon_criteria, &working_space);
+
         Self {
             characteristics,
             kullback_criteria,
             shannon_criteria,
             working_space,
+            r_kullback,
+            r_shannon,
         }
+    }
+
+    fn find_radius(criteria: &[f64], working_space: &[usize]) -> Vec<f64> {
+        let iter = working_space.iter().map(|i| criteria[*i]);
+
+        let max = iter.clone().reduce(f64::max).unwrap_or_default();
+
+        iter.filter(|&c| c == max).collect()
     }
 
     fn kullback_criteria(characteristics: &[Characteristics]) -> Vec<f64> {
@@ -124,9 +142,9 @@ impl Criteria {
         characteristics
     }
 
-    fn calculate_max_radius(sk: &SK) -> u32 {
-        let self_max_distance = sk.distances_to_self.iter().max().unwrap_or(&0);
-        let closest_max_distance = sk.distances_to_closest.iter().max().unwrap_or(&0);
+    fn calculate_max_radius(distances_to_self: &[u32], distances_to_closest: &[u32]) -> u32 {
+        let self_max_distance = distances_to_self.iter().max().unwrap_or(&0);
+        let closest_max_distance = distances_to_closest.iter().max().unwrap_or(&0);
 
         *self_max_distance.max(closest_max_distance)
     }

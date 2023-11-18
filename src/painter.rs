@@ -10,6 +10,8 @@ pub struct SK {
     pub closest: usize,
     self_realizations: Vec<Pos2>,
     closest_realizations: Vec<Pos2>,
+    r_kullback: Vec<f64>,
+    r_shannon: Vec<f64>,
 }
 
 impl SK {
@@ -39,7 +41,13 @@ impl SK {
             closest,
             self_realizations,
             closest_realizations,
+            ..Default::default()
         }
+    }
+
+    pub fn set_radius(&mut self, r_kullback: Vec<f64>, r_shannon: Vec<f64>) {
+        self.r_kullback = r_kullback;
+        self.r_shannon = r_shannon;
     }
 
     fn calculate_coordinates(
@@ -101,6 +109,16 @@ impl SK {
 
         let center = pos2(padding_x + (self.distance as f32 - min_x) * k, padding_y);
         painter.circle_filled(center, radius, Color32::RED);
+
+        self.r_shannon.iter().for_each(|r| {
+            let center = pos2(padding_x - min_x * k, padding_y);
+            painter.circle_stroke(center, *r as f32, (stroke_width, Color32::YELLOW));
+        });
+
+        self.r_kullback.iter().for_each(|r| {
+            let center = pos2(padding_x - min_x * k, padding_y);
+            painter.circle_stroke(center, *r as f32 * k, (stroke_width, Color32::RED));
+        });
 
         self.self_realizations.iter().for_each(|c| {
             let center = pos2(padding_x + (c.x - min_x) * k, padding_y + c.y * k);

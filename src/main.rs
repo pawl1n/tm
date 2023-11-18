@@ -230,8 +230,18 @@ impl MyApp {
 
         self.criterias = self
             .sk
-            .iter()
-            .map(|sk| criteria::Criteria::new(sk, number_of_realizations))
+            .iter_mut()
+            .map(|sk| {
+                let criteria = criteria::Criteria::new(
+                    &sk.distances_to_self,
+                    &sk.distances_to_closest,
+                    number_of_realizations,
+                );
+
+                sk.set_radius(criteria.r_kullback.clone(), criteria.r_shannon.clone());
+
+                criteria
+            })
             .collect();
     }
 
