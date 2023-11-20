@@ -69,7 +69,7 @@ impl SK {
 
             let x = (distance.powi(2) - rc.powi(2) + rs.powi(2)) / (2.0 * distance);
             let y2 = rs.powi(2) - x.powi(2);
-            let y = (y2 as f64).sqrt() as f32;
+            let y = (y2 as f64).sqrt() as f32 * if i % 2 == 0 { 1.0 } else { -1.0 };
 
             if y.is_finite() && x.is_finite() {
                 let center = pos2(x, y);
@@ -86,7 +86,7 @@ impl SK {
             return;
         }
 
-        let ((min_x, _), (max_x, max_y)) = self.find_min_max();
+        let ((min_x, min_y), (max_x, max_y)) = self.find_min_max();
 
         let size = ui.available_size();
         let (response, painter) = ui.allocate_painter(size, Sense::hover());
@@ -95,7 +95,7 @@ impl SK {
 
         let k = std::cmp::min_by(
             size.x / (max_x - min_x + 15.0),
-            size.y / (max_y + 15.0),
+            size.y / (max_y - min_y + 15.0),
             |a, b| a.total_cmp(b),
         );
 
@@ -104,72 +104,95 @@ impl SK {
         let padding_y = left_top.y + radius + stroke_width;
         let padding_x = left_top.x + radius + stroke_width;
 
-        let center = pos2(padding_x - min_x * k, padding_y);
+        let center = pos2(padding_x - min_x * k, padding_y - min_y * k);
         painter.circle_filled(center, radius, Color32::YELLOW);
 
-        let center = pos2(padding_x + (self.distance as f32 - min_x) * k, padding_y);
+        let center = pos2(
+            padding_x + (self.distance as f32 - min_x) * k,
+            padding_y - min_y * k,
+        );
         painter.circle_filled(center, radius, Color32::RED);
 
         self.r_shannon.iter().for_each(|r| {
-            let center = pos2(padding_x - min_x * k, padding_y);
-            painter.circle_stroke(center, *r as f32, (stroke_width, Color32::YELLOW));
+            let center = pos2(padding_x - min_x * k, padding_y - min_y * k);
+            painter.circle_stroke(center, *r as f32 * k, (stroke_width, Color32::YELLOW));
         });
 
         self.r_kullback.iter().for_each(|r| {
-            let center = pos2(padding_x - min_x * k, padding_y);
+            let center = pos2(padding_x - min_x * k, padding_y - min_y * k);
             painter.circle_stroke(center, *r as f32 * k, (stroke_width, Color32::RED));
         });
 
         self.self_realizations.iter().for_each(|c| {
-            let center = pos2(padding_x + (c.x - min_x) * k, padding_y + c.y * k);
+            let center = pos2(padding_x + (c.x - min_x) * k, padding_y + (c.y - min_y) * k);
             painter.circle_stroke(center, radius, (stroke_width, Color32::YELLOW));
         });
 
         self.closest_realizations.iter().for_each(|c| {
-            let center = pos2(padding_x + (c.x - min_x) * k, padding_y + c.y * k);
+            let center = pos2(padding_x + (c.x - min_x) * k, padding_y + (c.y - min_y) * k);
             painter.circle_stroke(center, radius, (stroke_width, Color32::RED));
         });
     }
 
     fn find_min_max(&self) -> ((f32, f32), (f32, f32)) {
-        let mut min_coordinates = (0.0, 0.0);
-        let mut max_coordinates = (self.distance as f32, 0.0);
+        let max_radius = self
+            .r_shannon
+            .iter()
+            .cloned()
+            .reduce(f64::max)
+            .unwrap_or_default()
+            .max(
+                self.r_kullback
+                    .iter()
+                    .cloned()
+                    .reduce(f64::max)
+                    .unwrap_or_default(),
+            ) as f32;
 
-        for i in 0..self.self_realizations.len() {
-            let self_realization = self.self_realizations[i];
-            let closest_realization = self.closest_realizations[i];
+        let min_x = (0..self.self_realizations.len())
+            .map(|i| {
+                self.self_realizations[i]
+                    .x
+                    .min(self.closest_realizations[i].x)
+            })
+            .reduce(f32::min)
+            .unwrap_or_default()
+            .min(0.0)
+            .min(max_radius * -1.0);
 
-            min_coordinates.0 = if self_realization.x < min_coordinates.0
-                && self_realization.x < closest_realization.x
-            {
-                self_realization.x
-            } else if closest_realization.x < min_coordinates.0 {
-                closest_realization.x
-            } else {
-                min_coordinates.0
-            };
+        let min_y = (0..self.self_realizations.len())
+            .map(|i| {
+                self.self_realizations[i]
+                    .y
+                    .min(self.closest_realizations[i].y)
+            })
+            .reduce(f32::min)
+            .unwrap_or_default()
+            .min(0.0)
+            .min(max_radius * -1.0);
 
-            max_coordinates.0 = if self_realization.x > max_coordinates.0
-                && self_realization.x > closest_realization.x
-            {
-                self_realization.x
-            } else if closest_realization.x > max_coordinates.0 {
-                closest_realization.x
-            } else {
-                max_coordinates.0
-            };
+        let max_x = (0..self.self_realizations.len())
+            .map(|i| {
+                self.self_realizations[i]
+                    .x
+                    .max(self.closest_realizations[i].x)
+            })
+            .reduce(f32::max)
+            .unwrap_or_default()
+            .max(self.distance as f32)
+            .max(max_radius);
 
-            max_coordinates.1 = if self_realization.y > max_coordinates.1
-                && self_realization.y > closest_realization.y
-            {
-                self_realization.y
-            } else if closest_realization.y > max_coordinates.1 {
-                closest_realization.y
-            } else {
-                max_coordinates.1
-            };
-        }
+        let max_y = (0..self.self_realizations.len())
+            .map(|i| {
+                self.self_realizations[i]
+                    .y
+                    .max(self.closest_realizations[i].y)
+            })
+            .reduce(f32::max)
+            .unwrap_or_default()
+            .max(0.0)
+            .max(max_radius);
 
-        (min_coordinates, max_coordinates)
+        ((min_x, min_y), (max_x, max_y))
     }
 }
