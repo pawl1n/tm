@@ -2,11 +2,13 @@
 mod class_data;
 mod corridor;
 mod criteria;
+mod draw;
 mod hamming;
 mod painter;
 
 use class_data::ClassData;
-use corridor::{Corridor, DrawPlot};
+use corridor::Corridor;
+use draw::Draw;
 
 use eframe::{egui, epaint::ColorImage};
 use image::{open, EncodableLayout};
@@ -65,7 +67,20 @@ impl eframe::App for MyApp {
                 self.add_image_selector(ui);
             });
 
-        if self.widget_stauses.get("2D").unwrap_or(&false) == &true {
+        if *self.widget_stauses.get("Criteria").unwrap_or(&false) {
+            self.criterias.iter().enumerate().for_each(|(i, criteria)| {
+                egui::Window::new(format!("Criteria {i}"))
+                    .id(egui::Id::new(format!("Criteria{i}")))
+                    .default_size(egui::vec2(250.0, 200.0))
+                    .min_width(400.0)
+                    .min_height(150.0)
+                    .show(ctx, |ui| {
+                        criteria.draw(ui);
+                    });
+            });
+        }
+
+        if *self.widget_stauses.get("2D").unwrap_or(&false) {
             self.sk.iter().enumerate().for_each(|(i, sk)| {
                 egui::Window::new(format!("2D {i}->{}", sk.closest))
                     .id(egui::Id::new(format!("2D{i}")))
@@ -78,7 +93,7 @@ impl eframe::App for MyApp {
             });
         }
 
-        if self.widget_stauses.get("Information").unwrap_or(&false) == &true {
+        if *self.widget_stauses.get("Information").unwrap_or(&false) {
             egui::Window::new("Information")
                 .resizable(false)
                 .show(ctx, |ui| {
@@ -87,7 +102,7 @@ impl eframe::App for MyApp {
         }
 
         if !self.classes.is_empty() {
-            if self.widget_stauses.get("Settings").unwrap_or(&false) == &true {
+            if *self.widget_stauses.get("Settings").unwrap_or(&false) {
                 egui::Window::new("Settings")
                     .resizable(false)
                     .show(ctx, |ui| {
@@ -95,17 +110,17 @@ impl eframe::App for MyApp {
                     });
             }
 
-            if self.widget_stauses.get("Plot").unwrap_or(&false) == &true {
+            if *self.widget_stauses.get("Plot").unwrap_or(&false) {
                 egui::Window::new("Plot")
                     .default_size(egui::vec2(400.0, 200.0))
                     .show(ctx, |ui| {
                         frame.show(ui, |ui| {
-                            self.corridor.draw_corridor_plot(ui);
+                            self.corridor.draw(ui);
                         });
                     });
             }
 
-            if self.widget_stauses.get("SK").unwrap_or(&false) == &true && !self.sk.is_empty() {
+            if *self.widget_stauses.get("SK").unwrap_or(&false) && !self.sk.is_empty() {
                 egui::Window::new("SK").show(ctx, |ui| {
                     self.sk.iter().enumerate().for_each(|(i, sk)| {
                         ui.add(egui::Label::new(format!("SK[1,{i}]")));
@@ -159,7 +174,7 @@ impl eframe::App for MyApp {
                 });
             }
 
-            if self.widget_stauses.get("Classes").unwrap_or(&false) == &true {
+            if *self.widget_stauses.get("Classes").unwrap_or(&false) {
                 egui::Window::new("Classes")
                     .resizable(false)
                     .show(ctx, |ui| {
@@ -215,8 +230,18 @@ impl MyApp {
 
         self.criterias = self
             .sk
-            .iter()
-            .map(|sk| criteria::Criteria::new(sk, number_of_realizations))
+            .iter_mut()
+            .map(|sk| {
+                let criteria = criteria::Criteria::new(
+                    &sk.distances_to_self,
+                    &sk.distances_to_closest,
+                    number_of_realizations,
+                );
+
+                sk.set_radius(criteria.r_kullback.clone(), criteria.r_shannon.clone());
+
+                criteria
+            })
             .collect();
     }
 
@@ -353,6 +378,10 @@ impl MyApp {
     }
 
     fn set_base_class(&mut self, class: usize, ui: &mut egui::Ui) {
+        if self.classes.len() <= class {
+            return;
+        }
+
         self.selected_class = class;
         self.corridor.set_base_class(
             self.classes[self.selected_class].bytes(),
@@ -471,6 +500,7 @@ impl MyApp {
             self.add_button("Plot", ui);
             self.add_button("SK", ui);
             self.add_button("2D", ui);
+            self.add_button("Criteria", ui);
         });
     }
 
