@@ -72,8 +72,8 @@ impl eframe::App for MyApp {
                 egui::Window::new(format!("Criteria {i}"))
                     .id(egui::Id::new(format!("Criteria{i}")))
                     .default_size(egui::vec2(250.0, 200.0))
-                    .min_width(250.0)
-                    .min_height(200.0)
+                    .min_width(400.0)
+                    .min_height(150.0)
                     .show(ctx, |ui| {
                         criteria.draw(ui);
                     });
