@@ -30,15 +30,9 @@ impl Criteria {
         let max_radius = Self::calculate_max_radius(distances_to_self, distances_to_closest);
 
         let self_realizations =
-            Self::calculate_number_of_self_realizations(distances_to_self, max_radius);
+            Self::calculate_number_of_realizations(distances_to_self, max_radius);
         let closest_realizations =
-            Self::calculate_number_of_self_realizations(distances_to_closest, max_radius);
-        // let closest_realizations_in_closest = Self::calculate_number_of_self_realizations(
-        //     &sk.distances_from_closest_to_itself,
-        //     max_radius,
-        // );
-        // let self_realizations_in_closest =
-        //     Self::calculate_number_of_self_realizations(&sk.distances_from_closest, max_radius);
+            Self::calculate_number_of_realizations(distances_to_closest, max_radius);
 
         let characteristics = Self::calculate_characteristics(
             &self_realizations,
@@ -52,7 +46,7 @@ impl Criteria {
         let working_space: Vec<usize> = characteristics
             .iter()
             .enumerate()
-            .filter(|(_, c)| c.d1 >= 0.5 && c.d2 >= 0.5)
+            .filter(|(_, c)| c.d1 >= 0.5 && c.d1 <= 1.0 && c.d2 >= 0.5 && c.d2 <= 1.0)
             .map(|(i, _)| i)
             .collect();
 
@@ -70,18 +64,23 @@ impl Criteria {
     }
 
     fn find_radius(criteria: &[f64], working_space: &[usize]) -> Vec<f64> {
-        let iter = working_space.iter().map(|i| criteria[*i]);
+        let max = working_space
+            .iter()
+            .map(|&i| criteria[i])
+            .reduce(f64::max)
+            .unwrap_or_default();
 
-        let max = iter.clone().reduce(f64::max).unwrap_or_default();
-
-        iter.filter(|&c| c == max).collect()
+        working_space
+            .iter()
+            .filter(|&&i| criteria[i] == max)
+            .map(|i| *i as f64)
+            .collect()
     }
 
     fn kullback_criteria(characteristics: &[Characteristics]) -> Vec<f64> {
         characteristics
             .iter()
-            .enumerate()
-            .map(|(_, c)| {
+            .map(|c| {
                 ((2.0 - (c.alpha + c.beta)) / (c.alpha + c.beta)).log2()
                     * (1.0 - (c.alpha + c.beta))
             })
@@ -91,31 +90,32 @@ impl Criteria {
     fn shannon_criteria(characteristics: &[Characteristics]) -> Vec<f64> {
         characteristics
             .iter()
-            .enumerate()
-            .map(|(_, c)| {
+            .map(|c| {
                 let a = c.alpha;
                 let b = c.beta;
                 let d1 = c.d1;
                 let d2 = c.d2;
 
-                let mut divisor1 = a + d2;
-                let mut divisor2 = d1 + b;
-
-                if divisor1 == 0.0 {
-                    divisor1 = 0.000001;
-                }
-
-                if divisor2 == 0.0 {
-                    divisor2 = 0.000001;
-                }
+                let divisor1 = a + d2;
+                let divisor2 = d1 + b;
 
                 1.0 + 0.5
-                    * ((a / divisor1) * (a / divisor1).log2()
-                        + (d1 / divisor2) * (d1 / divisor2).log2()
-                        + (b / divisor2) * (b / divisor2).log2()
-                        + (d2 / divisor1) * (d2 / divisor1).log2())
+                    * (Self::divide_and_multiply_log2(a, divisor1)
+                        + Self::divide_and_multiply_log2(d1, divisor2)
+                        + Self::divide_and_multiply_log2(b, divisor2)
+                        + Self::divide_and_multiply_log2(d2, divisor1))
             })
             .collect()
+    }
+
+    fn divide_and_multiply_log2(x: f64, y: f64) -> f64 {
+        let result = (x / y) * (x / y).log2();
+
+        if result.is_normal() {
+            result
+        } else {
+            0.0
+        }
     }
 
     fn calculate_characteristics(
@@ -123,23 +123,21 @@ impl Criteria {
         closest_realizations: &[usize],
         number_of_realizations: usize,
     ) -> Vec<Characteristics> {
-        let mut characteristics: Vec<Characteristics> = Vec::new();
+        (0..realizations.len())
+            .map(|i| {
+                let d1 = realizations[i] as f64 / number_of_realizations as f64;
+                let alpha = 1.0 - d1;
+                let beta = closest_realizations[i] as f64 / number_of_realizations as f64;
+                let d2 = 1.0 - beta;
 
-        for i in 0..realizations.len() {
-            let d1 = realizations[i] as f64 / number_of_realizations as f64;
-            let alpha = 1.0 - d1;
-            let beta = closest_realizations[i] as f64 / number_of_realizations as f64;
-            let d2 = 1.0 - beta;
-
-            characteristics.push(Characteristics {
-                d1,
-                alpha,
-                beta,
-                d2,
-            });
-        }
-
-        characteristics
+                Characteristics {
+                    d1,
+                    alpha,
+                    beta,
+                    d2,
+                }
+            })
+            .collect()
     }
 
     fn calculate_max_radius(distances_to_self: &[u32], distances_to_closest: &[u32]) -> u32 {
@@ -149,22 +147,13 @@ impl Criteria {
         *self_max_distance.max(closest_max_distance)
     }
 
-    fn calculate_number_of_self_realizations(
+    fn calculate_number_of_realizations(
         distances_to_realizations: &[u32],
         max_radius: u32,
     ) -> Vec<usize> {
-        let mut number_of_realizations: Vec<usize> = Vec::new();
-
-        for i in 0..max_radius {
-            number_of_realizations.push(
-                distances_to_realizations
-                    .iter()
-                    .filter(|d| d <= &&i)
-                    .count(),
-            );
-        }
-
-        number_of_realizations
+        (0..max_radius)
+            .map(|i| distances_to_realizations.iter().filter(|&d| d < &i).count())
+            .collect()
     }
 }
 
