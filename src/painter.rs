@@ -12,6 +12,8 @@ pub struct SK {
     closest_realizations: Vec<Pos2>,
     r_kullback: Vec<f64>,
     r_shannon: Vec<f64>,
+    r_kullback_closest: Vec<f64>,
+    r_shannon_closest: Vec<f64>,
 }
 
 impl SK {
@@ -48,6 +50,11 @@ impl SK {
     pub fn set_radius(&mut self, r_kullback: Vec<f64>, r_shannon: Vec<f64>) {
         self.r_kullback = r_kullback;
         self.r_shannon = r_shannon;
+    }
+
+    pub fn set_radius_closest(&mut self, r_kullback: Vec<f64>, r_shannon: Vec<f64>) {
+        self.r_kullback_closest = r_kullback;
+        self.r_shannon_closest = r_shannon;
     }
 
     fn calculate_coordinates(
@@ -123,6 +130,22 @@ impl SK {
             painter.circle_stroke(center, *r as f32 * k, (stroke_width, Color32::RED));
         });
 
+        self.r_shannon_closest.iter().for_each(|r| {
+            let center = pos2(
+                padding_x - (min_x - self.distance as f32) * k,
+                padding_y - min_y * k,
+            );
+            painter.circle_stroke(center, *r as f32 * k, (stroke_width, Color32::YELLOW));
+        });
+
+        self.r_kullback_closest.iter().for_each(|r| {
+            let center = pos2(
+                padding_x - (min_x - self.distance as f32) * k,
+                padding_y - min_y * k,
+            );
+            painter.circle_stroke(center, *r as f32 * k, (stroke_width, Color32::RED));
+        });
+
         self.self_realizations.iter().for_each(|c| {
             let center = pos2(padding_x + (c.x - min_x) * k, padding_y + (c.y - min_y) * k);
             painter.circle_stroke(center, radius, (stroke_width, Color32::YELLOW));
@@ -149,6 +172,20 @@ impl SK {
                     .unwrap_or_default(),
             ) as f32;
 
+        let max_radius_closest = self
+            .r_shannon_closest
+            .iter()
+            .cloned()
+            .reduce(f64::max)
+            .unwrap_or_default()
+            .max(
+                self.r_kullback_closest
+                    .iter()
+                    .cloned()
+                    .reduce(f64::max)
+                    .unwrap_or_default(),
+            ) as f32;
+
         let min_x = (0..self.self_realizations.len())
             .map(|i| {
                 self.self_realizations[i]
@@ -169,7 +206,8 @@ impl SK {
             .reduce(f32::min)
             .unwrap_or_default()
             .min(0.0)
-            .min(max_radius * -1.0);
+            .min(max_radius * -1.0)
+            .min(max_radius_closest * -1.0);
 
         let max_x = (0..self.self_realizations.len())
             .map(|i| {
@@ -180,7 +218,8 @@ impl SK {
             .reduce(f32::max)
             .unwrap_or_default()
             .max(self.distance as f32)
-            .max(max_radius);
+            .max(max_radius)
+            .max(max_radius_closest + self.distance as f32);
 
         let max_y = (0..self.self_realizations.len())
             .map(|i| {

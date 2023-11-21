@@ -45,6 +45,7 @@ struct MyApp {
     sk: Vec<painter::SK>,
     widget_stauses: std::collections::HashMap<String, bool>,
     criterias: Vec<criteria::Criteria>,
+    closest_criterias: Vec<criteria::Criteria>,
 }
 
 impl eframe::App for MyApp {
@@ -78,6 +79,20 @@ impl eframe::App for MyApp {
                         criteria.draw(ui);
                     });
             });
+
+            self.closest_criterias
+                .iter()
+                .enumerate()
+                .for_each(|(i, criteria)| {
+                    egui::Window::new(format!("Criteria {i} closest"))
+                        .id(egui::Id::new(format!("Criteria{i} closest")))
+                        .default_size(egui::vec2(250.0, 200.0))
+                        .min_width(400.0)
+                        .min_height(150.0)
+                        .show(ctx, |ui| {
+                            criteria.draw(ui);
+                        });
+                });
         }
 
         if *self.widget_stauses.get("2D").unwrap_or(&false) {
@@ -239,6 +254,22 @@ impl MyApp {
                 );
 
                 sk.set_radius(criteria.r_kullback.clone(), criteria.r_shannon.clone());
+
+                criteria
+            })
+            .collect();
+
+        self.closest_criterias = self
+            .sk
+            .iter_mut()
+            .map(|sk| {
+                let criteria = criteria::Criteria::new(
+                    &sk.distances_from_closest_to_itself,
+                    &sk.distances_from_closest,
+                    number_of_realizations,
+                );
+
+                sk.set_radius_closest(criteria.r_kullback.clone(), criteria.r_shannon.clone());
 
                 criteria
             })
