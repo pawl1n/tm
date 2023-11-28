@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 mod class_data;
+mod class_loader;
 mod corridor;
 mod criteria;
 mod hamming;
@@ -9,7 +10,6 @@ use class_data::ClassData;
 use corridor::{Corridor, DrawPlot};
 
 use eframe::{egui, epaint::ColorImage};
-use image::{open, EncodableLayout};
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -31,11 +31,7 @@ fn main() -> Result<(), eframe::Error> {
 
 #[derive(Default)]
 struct MyApp {
-    path: String,
-    size: Option<(usize, usize)>,
-    error: Option<String>,
     selected_class: usize,
-    classes: Vec<ClassData>,
     matrices: Vec<ClassData>,
     delta: u8,
     corridor: Corridor,
@@ -43,6 +39,7 @@ struct MyApp {
     sk: Vec<painter::SK>,
     widget_stauses: std::collections::HashMap<String, bool>,
     criterias: Vec<criteria::Criteria>,
+    class_loader: class_loader::ClassLoader,
 }
 
 impl eframe::App for MyApp {
@@ -62,7 +59,15 @@ impl eframe::App for MyApp {
         egui::TopBottomPanel::bottom(egui::Id::new("Loader"))
             .frame(frame)
             .show(ctx, |ui| {
-                self.add_image_selector(ui);
+                if self.class_loader.show(ui).loaded() {
+                    if self.class_loader.classes.len() == 1 {
+                        self.corridor = Corridor::new(
+                            self.class_loader.classes[0].bytes(),
+                            self.class_loader.size.unwrap(),
+                        )
+                    }
+                    self.calculate_binary_matrices(ui.ctx());
+                }
             });
 
         if self.widget_stauses.get("2D").unwrap_or(&false) == &true {
@@ -86,7 +91,7 @@ impl eframe::App for MyApp {
                 });
         }
 
-        if !self.classes.is_empty() {
+        if !self.class_loader.classes.is_empty() {
             if self.widget_stauses.get("Settings").unwrap_or(&false) == &true {
                 egui::Window::new("Settings")
                     .resizable(false)
@@ -168,7 +173,7 @@ impl eframe::App for MyApp {
                                 ui.add(egui::Label::new("Classes"));
 
                                 ui.horizontal_wrapped(|ui| {
-                                    self.classes.iter().for_each(|matrix| {
+                                    self.class_loader.classes.iter().for_each(|matrix| {
                                         ui.image((
                                             matrix.texture().id(),
                                             matrix.texture().size_vec2(),
@@ -211,7 +216,7 @@ impl eframe::App for MyApp {
 
 impl MyApp {
     fn calculate_criteria(&mut self) {
-        let (_, number_of_realizations) = self.size.expect("Expected size");
+        let (_, number_of_realizations) = self.class_loader.size.expect("Expected size");
 
         self.criterias = self
             .sk
@@ -221,9 +226,9 @@ impl MyApp {
     }
 
     fn calculate_code_distances(&mut self) {
-        self.sk = Vec::with_capacity(self.classes.len());
+        self.sk = Vec::with_capacity(self.class_loader.classes.len());
 
-        if self.classes.len() <= 1 {
+        if self.class_loader.classes.len() <= 1 {
             return;
         }
 
@@ -274,11 +279,12 @@ impl MyApp {
     }
 
     fn calculate_binary_matrices(&mut self, ctx: &egui::Context) {
-        if let Some((attributes, realizations)) = self.size {
+        if let Some((attributes, realizations)) = self.class_loader.size {
             let lower = self.corridor.lower_allowance();
             let upper = self.corridor.upper_allowance();
 
             self.matrices = self
+                .class_loader
                 .classes
                 .iter()
                 .enumerate()
@@ -315,7 +321,7 @@ impl MyApp {
     }
 
     fn calculate_reference_vectors(&mut self, ctx: &egui::Context) {
-        if let Some((attributes, realizations)) = self.size {
+        if let Some((attributes, realizations)) = self.class_loader.size {
             self.reference_vectors = self
                 .matrices
                 .iter()
@@ -355,19 +361,19 @@ impl MyApp {
     fn set_base_class(&mut self, class: usize, ui: &mut egui::Ui) {
         self.selected_class = class;
         self.corridor.set_base_class(
-            self.classes[self.selected_class].bytes(),
-            self.size.unwrap(),
+            self.class_loader.classes[self.selected_class].bytes(),
+            self.class_loader.size.unwrap(),
         );
         self.calculate_binary_matrices(ui.ctx());
     }
 
     fn add_controls(&mut self, ui: &mut egui::Ui) {
-        let selected = &self.classes[self.selected_class];
+        let selected = &self.class_loader.classes[self.selected_class];
         ui.add(egui::Label::new("Selected class"));
         ui.image((selected.texture().id(), selected.texture().size_vec2()));
         ui.add(egui::Label::new("Select class:"));
         ui.horizontal_wrapped(|ui| {
-            for i in 0..self.classes.len() {
+            for i in 0..self.class_loader.classes.len() {
                 if ui
                     .add(egui::widgets::RadioButton::new(
                         self.selected_class == i,
@@ -391,7 +397,7 @@ impl MyApp {
         });
 
         if ui.button("Delete").clicked() {
-            self.classes.remove(self.selected_class);
+            self.class_loader.classes.remove(self.selected_class);
             self.set_base_class(0, ui);
         }
     }
@@ -399,68 +405,16 @@ impl MyApp {
     fn add_stats(&self, ui: &mut egui::Ui) {
         ui.add(egui::Label::new(format!(
             "Number of realizations: {}",
-            self.size.map_or(0, |s| s.1)
+            self.class_loader.size.map_or(0, |s| s.1)
         )));
         ui.add(egui::Label::new(format!(
             "Number of attributes: {}",
-            self.size.map_or(0, |s| s.0)
+            self.class_loader.size.map_or(0, |s| s.0)
         )));
         ui.add(egui::Label::new(format!(
             "Number of classes: {}",
-            self.classes.len()
+            self.class_loader.classes.len()
         )));
-    }
-
-    fn add_image_selector(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.path));
-
-            if ui.add(egui::Button::new("Load image")).clicked() {
-                if let Err(msg) = self.load_grayscale(ui.ctx()) {
-                    self.error = Some(msg.to_string());
-                } else {
-                    self.error = None;
-                    self.path.clear();
-                    if self.classes.len() == 1 {
-                        self.corridor = Corridor::new(self.classes[0].bytes(), self.size.unwrap())
-                    }
-                    self.calculate_binary_matrices(ui.ctx());
-                }
-            };
-
-            if let Some(message) = &self.error {
-                ui.add(egui::Label::new(message));
-                if ui.add(egui::Button::new("x")).clicked() {
-                    self.error = None;
-                }
-            }
-        });
-    }
-
-    fn load_grayscale(&mut self, ctx: &egui::Context) -> Result<(), String> {
-        let luma = open(&self.path).map_err(|err| err.to_string())?.to_luma8();
-        let vec = luma.to_vec();
-
-        if self.classes.iter().any(|x| x.bytes().eq(&vec)) {
-            return Err("This image has already been loaded".to_owned());
-        }
-
-        if self.size.is_none() {
-            self.size = Some((luma.width() as usize, luma.height() as usize));
-        } else if self.size.unwrap() != (luma.width() as usize, luma.height() as usize) {
-            return Err("Error: Images should be of the same format".to_owned());
-        }
-
-        let image = ColorImage::from_gray(
-            [luma.width() as usize, luma.height() as usize],
-            luma.as_bytes(),
-        );
-
-        let texture = ctx.load_texture(&self.path, image, Default::default());
-
-        self.classes.push(ClassData::new(vec, texture));
-
-        Ok(())
     }
 
     fn add_widgets_controls(&mut self, ui: &mut egui::Ui) {
