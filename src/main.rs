@@ -415,7 +415,7 @@ impl MyApp {
     }
 
     fn set_base_class(&mut self, class: usize, ui: &mut egui::Ui) {
-        if self.classes.len() <= class {
+        if self.class_loader.classes.len() <= class {
             return;
         }
 
