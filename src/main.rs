@@ -35,9 +35,11 @@ fn main() -> Result<(), eframe::Error> {
 struct MyApp {
     selected_class: usize,
     matrices: Vec<ClassData>,
+    exam_matrices: Vec<ClassData>,
     delta: u8,
     corridor: Corridor,
     reference_vectors: Vec<ClassData>,
+    exam_reference_vectors: Vec<ClassData>,
     sk: Vec<painter::SK>,
     widget_stauses: std::collections::HashMap<String, bool>,
     criterias: Vec<criteria::Criteria>,
@@ -240,6 +242,53 @@ impl eframe::App for MyApp {
                         });
                     });
             }
+
+            if *self.widget_stauses.get("Exam classes").unwrap_or(&false) {
+                egui::Window::new("Exam classes")
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        egui::ScrollArea::new([true, true]).show(ui, |ui| {
+                            frame.show(ui, |ui| {
+                                ui.add(egui::Label::new("Classes"));
+
+                                ui.horizontal_wrapped(|ui| {
+                                    self.class_loader.exam_classes.iter().for_each(|matrix| {
+                                        ui.image((
+                                            matrix.texture().id(),
+                                            matrix.texture().size_vec2(),
+                                        ));
+                                    });
+                                });
+
+                                if !self.matrices.is_empty() {
+                                    ui.add(egui::Label::new("Binary matrices"));
+
+                                    ui.horizontal_wrapped(|ui| {
+                                        self.exam_matrices.iter().for_each(|matrix| {
+                                            ui.image((
+                                                matrix.texture().id(),
+                                                matrix.texture().size_vec2(),
+                                            ));
+                                        });
+                                    });
+                                }
+
+                                if !self.reference_vectors.is_empty() {
+                                    ui.add(egui::Label::new("Reference vectors"));
+
+                                    ui.horizontal_wrapped(|ui| {
+                                        self.exam_reference_vectors.iter().for_each(|vector| {
+                                            ui.image((
+                                                vector.texture().id(),
+                                                vector.texture().size_vec2(),
+                                            ));
+                                        });
+                                    });
+                                }
+                            });
+                        });
+                    });
+            }
         }
     }
 }
@@ -335,83 +384,104 @@ impl MyApp {
     }
 
     fn calculate_binary_matrices(&mut self, ctx: &egui::Context) {
-        if let Some((attributes, realizations)) = self.class_loader.size {
+        if let Some(size) = self.class_loader.size {
             let lower = self.corridor.lower_allowance();
             let upper = self.corridor.upper_allowance();
 
-            self.matrices = self
-                .class_loader
-                .classes
-                .iter()
-                .enumerate()
-                .map(|(i, class)| {
-                    let key: Vec<u8> = class
-                        .bytes()
-                        .iter()
-                        .enumerate()
-                        .map(|(i, x)| {
-                            let index = i.rem_euclid(attributes);
-                            if *x > lower[index] && *x < upper[index] {
-                                u8::MAX
-                            } else {
-                                u8::MIN
-                            }
-                        })
-                        .collect();
+            self.matrices =
+                Self::binary_matrices_for(&self.class_loader.classes, size, lower, upper, ctx);
+            self.exam_matrices =
+                Self::binary_matrices_for(&self.class_loader.exam_classes, size, lower, upper, ctx);
 
-                    let image = ColorImage::from_gray([attributes, realizations], &key);
-                    let texture = ctx.load_texture(
-                        "matrix".to_owned() + &i.to_string(),
-                        image,
-                        Default::default(),
-                    );
-
-                    ClassData::new(key, texture)
-                })
-                .collect();
-
-            self.calculate_reference_vectors(ctx);
+            self.calculate_reference_vectors(size, ctx);
             self.calculate_code_distances();
             self.calculate_criteria();
         }
     }
 
-    fn calculate_reference_vectors(&mut self, ctx: &egui::Context) {
-        if let Some((attributes, realizations)) = self.class_loader.size {
-            self.reference_vectors = self
-                .matrices
-                .iter()
-                .enumerate()
-                .map(|(i, matrix)| {
-                    let mut vector = Vec::with_capacity(attributes);
+    fn binary_matrices_for(
+        classes: &[ClassData],
+        size: (usize, usize),
+        lower: &[u8],
+        upper: &[u8],
+        ctx: &egui::Context,
+    ) -> Vec<ClassData> {
+        let (attributes, realizations) = size;
 
-                    for i in 0..attributes {
-                        let mut count = 0;
-
-                        for j in 0..realizations {
-                            if matrix.bytes()[i + j * attributes] == u8::MAX {
-                                count += 1;
-                            }
-                        }
-
-                        vector.push(if count > realizations / 2 {
+        classes
+            .iter()
+            .enumerate()
+            .map(|(i, class)| {
+                let key: Vec<u8> = class
+                    .bytes()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, x)| {
+                        let index = i.rem_euclid(attributes);
+                        if *x >= lower[index] && *x <= upper[index] {
                             u8::MAX
                         } else {
                             u8::MIN
-                        });
+                        }
+                    })
+                    .collect();
+
+                let image = ColorImage::from_gray([attributes, realizations], &key);
+                let texture = ctx.load_texture(
+                    "matrix".to_owned() + &i.to_string(),
+                    image,
+                    Default::default(),
+                );
+
+                ClassData::new(key, texture)
+            })
+            .collect()
+    }
+
+    fn calculate_reference_vectors(&mut self, size: (usize, usize), ctx: &egui::Context) {
+        self.reference_vectors = Self::reference_vectors_for(&self.matrices, size, ctx);
+        self.exam_reference_vectors = Self::reference_vectors_for(&self.exam_matrices, size, ctx);
+    }
+
+    fn reference_vectors_for(
+        matrices: &[ClassData],
+        size: (usize, usize),
+        ctx: &egui::Context,
+    ) -> Vec<ClassData> {
+        let (attributes, realizations) = size;
+
+        matrices
+            .iter()
+            .enumerate()
+            .map(|(i, matrix)| {
+                let mut vector = Vec::with_capacity(attributes);
+
+                for i in 0..attributes {
+                    let mut count = 0;
+
+                    for j in 0..realizations {
+                        if matrix.bytes()[i + j * attributes] == u8::MAX {
+                            count += 1;
+                        }
                     }
 
-                    let image = ColorImage::from_gray([attributes, 10], &vector.repeat(10));
-                    let texture = ctx.load_texture(
-                        "reference_vector".to_owned() + &i.to_string(),
-                        image,
-                        Default::default(),
-                    );
+                    vector.push(if count > realizations / 2 {
+                        u8::MAX
+                    } else {
+                        u8::MIN
+                    });
+                }
 
-                    ClassData::new(vector, texture)
-                })
-                .collect();
-        }
+                let image = ColorImage::from_gray([attributes, 10], &vector.repeat(10));
+                let texture = ctx.load_texture(
+                    "reference_vector".to_owned() + &i.to_string(),
+                    image,
+                    Default::default(),
+                );
+
+                ClassData::new(vector, texture)
+            })
+            .collect()
     }
 
     fn set_base_class(&mut self, class: usize, ui: &mut egui::Ui) {
@@ -486,6 +556,7 @@ impl MyApp {
             self.add_button("SK", ui);
             self.add_button("2D", ui);
             self.add_button("Criteria", ui);
+            self.add_button("Exam classes", ui);
         });
     }
 

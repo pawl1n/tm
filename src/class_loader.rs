@@ -37,7 +37,7 @@ pub struct ClassLoader {
     class_type: ClassType,
     error: Option<String>,
     path: String,
-    exam_classes: Vec<ClassData>,
+    pub exam_classes: Vec<ClassData>,
 }
 
 impl ClassLoader {
