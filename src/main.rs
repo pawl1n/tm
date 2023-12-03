@@ -325,30 +325,45 @@ impl MyApp {
                     .iter()
                     .enumerate()
                     .map(|(i, sk)| {
-                        let mu1 = hamming::distances_between(
+                        let results1: Vec<f64> = hamming::distances_between(
                             matrix.bytes(),
                             self.reference_vectors[i].bytes(),
                         )
                         .iter()
                         .map(|x| 1.0 - *x as f64 / self.criterias[i].min_radius())
-                        .sum::<f64>()
-                            / self.class_loader.size.unwrap_or((0, 0)).1 as f64;
+                        .collect();
 
-                        let mu2 = hamming::distances_between(
+                        let results2: Vec<f64> = hamming::distances_between(
                             matrix.bytes(),
                             self.reference_vectors[sk.closest].bytes(),
                         )
                         .iter()
                         .map(|x| 1.0 - *x as f64 / self.closest_criterias[i].min_radius())
-                        .sum::<f64>()
+                        .collect();
+
+                        let mut results: (u32, u32, u32) = (0, 0, 0);
+
+                        for i in 0..results1.len() {
+                            if results1[i] > 0.0 && results2[i] < 0.0 {
+                                results.0 += 1;
+                            } else if results1[i] < 0.0 && results2[i] > 0.0 {
+                                results.1 += 1;
+                            } else {
+                                results.2 += 1;
+                            }
+                        }
+
+                        let mu1 = results1.iter().sum::<f64>()
+                            / self.class_loader.size.unwrap_or((0, 0)).1 as f64;
+                        let mu2 = results2.iter().sum::<f64>()
                             / self.class_loader.size.unwrap_or((0, 0)).1 as f64;
 
                         let result = if mu1 > 0.0 && mu2 < 0.0 {
-                            ExamResult::Found(i)
+                            ExamResult::Found(i, results)
                         } else if mu1 < 0.0 && mu2 > 0.0 {
-                            ExamResult::Found(sk.closest)
+                            ExamResult::Found(sk.closest, results)
                         } else {
-                            ExamResult::Unknown
+                            ExamResult::Unknown(results)
                         };
 
                         ExamData::new(i, sk.closest, result)

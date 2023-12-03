@@ -1,16 +1,18 @@
 use std::fmt::Display;
 
+pub type ExamRealizationResults = (u32, u32, u32);
+
 #[derive(Debug)]
 pub enum ExamResult {
-    Found(usize),
-    Unknown,
+    Found(usize, ExamRealizationResults),
+    Unknown(ExamRealizationResults),
 }
 
 impl Display for ExamResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExamResult::Found(class) => write!(f, "{}", class),
-            ExamResult::Unknown => write!(f, "Unknown"),
+            ExamResult::Found(class, results) => write!(f, "{}: {:?}", class, results),
+            ExamResult::Unknown(results) => write!(f, "Unknown: {:?}", results),
         }
     }
 }
