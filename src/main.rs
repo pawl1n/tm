@@ -325,20 +325,6 @@ impl MyApp {
                     .iter()
                     .enumerate()
                     .map(|(i, sk)| {
-                        // let distance1 = hamming::distance_between(
-                        //     vector.bytes(),
-                        //     self.reference_vectors[i].bytes(),
-                        // );
-                        // let distance2 = hamming::distance_between(
-                        //     vector.bytes(),
-                        //     self.reference_vectors[sk.closest].bytes(),
-                        // );
-                        //
-                        // let mu1 =
-                        //     1.0 - dbg!(distance1) as f64 / dbg!(self.criterias[i].min_radius());
-                        // let mu2 = 1.0
-                        //     - dbg!(distance2) as f64 / dbg!(self.closest_criterias[i].min_radius());
-
                         let mu1 = hamming::distances_between(
                             matrix.bytes(),
                             self.reference_vectors[i].bytes(),
