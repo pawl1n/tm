@@ -63,6 +63,14 @@ impl Criteria {
         }
     }
 
+    pub fn min_radius(&self) -> f64 {
+        self.r_kullback
+            .iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(&0.0)
+            .to_owned()
+    }
+
     fn find_radius(criteria: &[f64], working_space: &[usize]) -> Vec<f64> {
         let max = working_space
             .iter()

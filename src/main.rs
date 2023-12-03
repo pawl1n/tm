@@ -4,6 +4,7 @@ mod class_loader;
 mod corridor;
 mod criteria;
 mod draw;
+mod exam_data;
 mod hamming;
 mod painter;
 
@@ -12,6 +13,7 @@ use corridor::Corridor;
 use draw::Draw;
 
 use eframe::{egui, epaint::ColorImage};
+use exam_data::{ExamData, ExamResult};
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -45,6 +47,7 @@ struct MyApp {
     criterias: Vec<criteria::Criteria>,
     class_loader: class_loader::ClassLoader,
     closest_criterias: Vec<criteria::Criteria>,
+    exam_data: Vec<Vec<ExamData>>,
 }
 
 impl eframe::App for MyApp {
@@ -204,7 +207,7 @@ impl eframe::App for MyApp {
                             frame.show(ui, |ui| {
                                 ui.add(egui::Label::new("Classes"));
 
-                                ui.horizontal_wrapped(|ui| {
+                                ui.horizontal(|ui| {
                                     self.class_loader.classes.iter().for_each(|matrix| {
                                         ui.image((
                                             matrix.texture().id(),
@@ -216,7 +219,7 @@ impl eframe::App for MyApp {
                                 if !self.matrices.is_empty() {
                                     ui.add(egui::Label::new("Binary matrices"));
 
-                                    ui.horizontal_wrapped(|ui| {
+                                    ui.horizontal(|ui| {
                                         self.matrices.iter().for_each(|matrix| {
                                             ui.image((
                                                 matrix.texture().id(),
@@ -229,7 +232,7 @@ impl eframe::App for MyApp {
                                 if !self.reference_vectors.is_empty() {
                                     ui.add(egui::Label::new("Reference vectors"));
 
-                                    ui.horizontal_wrapped(|ui| {
+                                    ui.horizontal(|ui| {
                                         self.reference_vectors.iter().for_each(|vector| {
                                             ui.image((
                                                 vector.texture().id(),
@@ -251,7 +254,7 @@ impl eframe::App for MyApp {
                             frame.show(ui, |ui| {
                                 ui.add(egui::Label::new("Classes"));
 
-                                ui.horizontal_wrapped(|ui| {
+                                ui.horizontal(|ui| {
                                     self.class_loader.exam_classes.iter().for_each(|matrix| {
                                         ui.image((
                                             matrix.texture().id(),
@@ -260,10 +263,10 @@ impl eframe::App for MyApp {
                                     });
                                 });
 
-                                if !self.matrices.is_empty() {
+                                if !self.exam_matrices.is_empty() {
                                     ui.add(egui::Label::new("Binary matrices"));
 
-                                    ui.horizontal_wrapped(|ui| {
+                                    ui.horizontal(|ui| {
                                         self.exam_matrices.iter().for_each(|matrix| {
                                             ui.image((
                                                 matrix.texture().id(),
@@ -273,10 +276,10 @@ impl eframe::App for MyApp {
                                     });
                                 }
 
-                                if !self.reference_vectors.is_empty() {
+                                if !self.exam_reference_vectors.is_empty() {
                                     ui.add(egui::Label::new("Reference vectors"));
 
-                                    ui.horizontal_wrapped(|ui| {
+                                    ui.horizontal(|ui| {
                                         self.exam_reference_vectors.iter().for_each(|vector| {
                                             ui.image((
                                                 vector.texture().id(),
@@ -289,11 +292,86 @@ impl eframe::App for MyApp {
                         });
                     });
             }
+            if *self.widget_stauses.get("Exam results").unwrap_or(&false) {
+                egui::Window::new("Exam results").show(ctx, |ui| {
+                    self.exam_data
+                        .iter()
+                        .enumerate()
+                        .for_each(|(i, exam_result)| {
+                            ui.add(egui::Label::new(format!("Exam result for {i}")));
+
+                            ui.vertical(|ui| {
+                                exam_result.iter().for_each(|result| {
+                                    ui.label(format!(
+                                        "{} -> {}: {}",
+                                        result.class1, result.class2, result.result
+                                    ));
+                                });
+                            });
+                        });
+                });
+            }
         }
     }
 }
 
 impl MyApp {
+    fn exam(&mut self) {
+        self.exam_data = self
+            .exam_matrices
+            .iter()
+            .map(|matrix| {
+                self.sk
+                    .iter()
+                    .enumerate()
+                    .map(|(i, sk)| {
+                        // let distance1 = hamming::distance_between(
+                        //     vector.bytes(),
+                        //     self.reference_vectors[i].bytes(),
+                        // );
+                        // let distance2 = hamming::distance_between(
+                        //     vector.bytes(),
+                        //     self.reference_vectors[sk.closest].bytes(),
+                        // );
+                        //
+                        // let mu1 =
+                        //     1.0 - dbg!(distance1) as f64 / dbg!(self.criterias[i].min_radius());
+                        // let mu2 = 1.0
+                        //     - dbg!(distance2) as f64 / dbg!(self.closest_criterias[i].min_radius());
+
+                        let mu1 = hamming::distances_between(
+                            matrix.bytes(),
+                            self.reference_vectors[i].bytes(),
+                        )
+                        .iter()
+                        .map(|x| 1.0 - *x as f64 / self.criterias[i].min_radius())
+                        .sum::<f64>()
+                            / self.class_loader.size.unwrap_or((0, 0)).1 as f64;
+
+                        let mu2 = hamming::distances_between(
+                            matrix.bytes(),
+                            self.reference_vectors[sk.closest].bytes(),
+                        )
+                        .iter()
+                        .map(|x| 1.0 - *x as f64 / self.closest_criterias[i].min_radius())
+                        .sum::<f64>()
+                            / self.class_loader.size.unwrap_or((0, 0)).1 as f64;
+
+                        let result = if mu1 > 0.0 && mu2 < 0.0 {
+                            ExamResult::Found(i)
+                        } else if mu1 < 0.0 && mu2 > 0.0 {
+                            ExamResult::Found(sk.closest)
+                        } else {
+                            ExamResult::Unknown
+                        };
+
+                        ExamData::new(i, sk.closest, result)
+                    })
+                    .collect()
+            })
+            .collect();
+    }
+
     fn calculate_criteria(&mut self) {
         let (_, number_of_realizations) = self.class_loader.size.expect("Expected size");
 
@@ -396,6 +474,7 @@ impl MyApp {
             self.calculate_reference_vectors(size, ctx);
             self.calculate_code_distances();
             self.calculate_criteria();
+            self.exam();
         }
     }
 
@@ -557,6 +636,7 @@ impl MyApp {
             self.add_button("2D", ui);
             self.add_button("Criteria", ui);
             self.add_button("Exam classes", ui);
+            self.add_button("Exam results", ui);
         });
     }
 

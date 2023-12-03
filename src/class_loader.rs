@@ -106,7 +106,12 @@ impl ClassLoader {
         let luma = open(&self.path).map_err(|err| err.to_string())?.to_luma8();
         let vec = luma.to_vec();
 
-        if self.classes.iter().any(|x| x.bytes().eq(&vec)) {
+        let classes = match self.class_type {
+            ClassType::Training => &self.classes,
+            ClassType::Exam => &self.exam_classes,
+        };
+
+        if classes.iter().any(|x| x.bytes().eq(&vec)) {
             return Err("This image has already been loaded".to_owned());
         }
 
