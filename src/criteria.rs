@@ -63,20 +63,18 @@ impl Criteria {
         }
     }
 
-    pub fn max_shannon_criteria(&self) -> f64 {
+    pub fn max_shannon_criteria(&self) -> Option<(usize, f64)> {
         self.working_space
             .iter()
-            .map(|&i| self.shannon_criteria[i])
-            .reduce(f64::max)
-            .unwrap_or_default()
+            .map(|&i| (i, self.shannon_criteria[i]))
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
     }
 
-    pub fn max_kullback_criteria(&self) -> f64 {
+    pub fn max_kullback_criteria(&self) -> Option<(usize, f64)> {
         self.working_space
             .iter()
-            .map(|&i| self.kullback_criteria[i])
-            .reduce(f64::max)
-            .unwrap_or_default()
+            .map(|&i| (i, self.kullback_criteria[i]))
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
     }
 
     pub fn min_radius(&self) -> f64 {

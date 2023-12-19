@@ -598,6 +598,7 @@ impl MyApp {
             self.class_loader.size.unwrap(),
         );
         self.calculate_binary_matrices(ui.ctx());
+        self.optimization_results = None;
     }
 
     fn add_controls(&mut self, ui: &mut egui::Ui) {
@@ -636,30 +637,56 @@ impl MyApp {
             }
 
             if ui.add(egui::Button::new("Optimize")).clicked() {
-                let results: Vec<(f64, f64)> = (u8::MIN..u8::MAX)
+                let results: Vec<(f64, f64, bool)> = (u8::MIN..u8::MAX)
                     .map(|delta| {
                         self.delta = delta;
                         self.corridor.delta(self.delta);
                         self.calculate_binary_matrices(ui.ctx());
 
-                        let shannon_delta = (self.criterias[self.selected_class]
-                            .max_shannon_criteria()
-                            + self.closest_criterias[self.selected_class].max_shannon_criteria())
+                        let max_shannon_criteria =
+                            self.criterias[self.selected_class].max_shannon_criteria();
+                        let max_closest_shannon_criteria =
+                            self.closest_criterias[self.selected_class].max_shannon_criteria();
+
+                        let shannon_delta = (max_shannon_criteria.map_or(0.0, |c| c.1)
+                            + max_closest_shannon_criteria.map_or(0.0, |c| c.1))
                             / 2.0;
 
-                        let kullback_delta = (self.criterias[self.selected_class]
-                            .max_kullback_criteria()
-                            + self.closest_criterias[self.selected_class].max_kullback_criteria())
+                        let max_kullback_criteria =
+                            self.criterias[self.selected_class].max_kullback_criteria();
+                        let max_closest_kullback_criteria =
+                            self.closest_criterias[self.selected_class].max_kullback_criteria();
+
+                        let kullback_delta = (max_kullback_criteria.map_or(0.0, |c| c.1)
+                            + max_closest_kullback_criteria.map_or(0.0, |c| c.1))
                             / 2.0;
 
-                        (shannon_delta, kullback_delta)
+                        let is_in_working_space = if max_shannon_criteria.is_some()
+                            && max_closest_shannon_criteria.is_some()
+                        {
+                            let characteristics = &self.criterias[self.selected_class]
+                                .characteristics[max_shannon_criteria.unwrap().0];
+                            let closest_characteristics = &self.closest_criterias
+                                [self.selected_class]
+                                .characteristics[max_closest_shannon_criteria.unwrap().0];
+
+                            characteristics.d1 > 0.0
+                                && closest_characteristics.d1 > 0.0
+                                && characteristics.d2 > 0.0
+                                && closest_characteristics.d2 > 0.0
+                        } else {
+                            false
+                        };
+
+                        (shannon_delta, kullback_delta, is_in_working_space)
                     })
                     .collect();
 
                 let best_delta = results
                     .iter()
                     .enumerate()
-                    .max_by(|(_, (a_shannon, _)), (_, (b_shannon, _))| {
+                    .filter(|(_, (_, _, in_working_space))| *in_working_space)
+                    .max_by(|(_, (a_shannon, _, _)), (_, (b_shannon, _, _))| {
                         a_shannon.total_cmp(b_shannon)
                     })
                     .map(|(i, _)| i as u8)
