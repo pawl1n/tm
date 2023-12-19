@@ -63,6 +63,22 @@ impl Criteria {
         }
     }
 
+    pub fn max_shannon_criteria(&self) -> f64 {
+        self.working_space
+            .iter()
+            .map(|&i| self.shannon_criteria[i])
+            .reduce(f64::max)
+            .unwrap_or_default()
+    }
+
+    pub fn max_kullback_criteria(&self) -> f64 {
+        self.working_space
+            .iter()
+            .map(|&i| self.kullback_criteria[i])
+            .reduce(f64::max)
+            .unwrap_or_default()
+    }
+
     pub fn min_radius(&self) -> f64 {
         self.r_kullback
             .iter()

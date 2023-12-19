@@ -6,6 +6,7 @@ mod criteria;
 mod draw;
 mod exam_data;
 mod hamming;
+mod optimization_results;
 mod painter;
 
 use class_data::ClassData;
@@ -14,6 +15,7 @@ use draw::Draw;
 
 use eframe::{egui, epaint::ColorImage};
 use exam_data::{ExamData, ExamResult};
+use optimization_results::OptimizationResults;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -48,6 +50,8 @@ struct MyApp {
     class_loader: class_loader::ClassLoader,
     closest_criterias: Vec<criteria::Criteria>,
     exam_data: Vec<Vec<ExamData>>,
+    selected_exam_class: usize,
+    optimization_results: Option<OptimizationResults>,
 }
 
 impl eframe::App for MyApp {
@@ -310,6 +314,25 @@ impl eframe::App for MyApp {
                             });
                         });
                 });
+            }
+
+            if *self
+                .widget_stauses
+                .get("Optimization results")
+                .unwrap_or(&false)
+            {
+                if let Some(optimization_results) = &self.optimization_results {
+                    egui::Window::new(format!(
+                        "Optimization result of delta for class {}",
+                        self.selected_class
+                    ))
+                    .default_size(egui::vec2(250.0, 200.0))
+                    .min_width(400.0)
+                    .min_height(150.0)
+                    .show(ctx, |ui| {
+                        optimization_results.draw(ui);
+                    });
+                };
             }
         }
     }
@@ -587,7 +610,7 @@ impl MyApp {
                 if ui
                     .add(egui::widgets::RadioButton::new(
                         self.selected_class == i,
-                        (i + 1).to_string(),
+                        i.to_string(),
                     ))
                     .clicked()
                 {
@@ -595,20 +618,80 @@ impl MyApp {
                 }
             }
         });
+
+        if ui.button("Delete").clicked() {
+            self.class_loader.classes.remove(self.selected_class);
+            self.set_base_class(0, ui);
+        }
+
         ui.horizontal(|ui| {
             ui.add(egui::Label::new("Delta"));
             if ui
                 .add(egui::Slider::new(&mut self.delta, u8::MIN..=u8::MAX))
                 .changed()
             {
+                self.optimization_results = None;
                 self.corridor.delta(self.delta);
                 self.calculate_binary_matrices(ui.ctx());
             }
+
+            if ui.add(egui::Button::new("Optimize")).clicked() {
+                let results: Vec<(f64, f64)> = (u8::MIN..u8::MAX)
+                    .map(|delta| {
+                        self.delta = delta;
+                        self.corridor.delta(self.delta);
+                        self.calculate_binary_matrices(ui.ctx());
+
+                        let shannon_delta = (self.criterias[self.selected_class]
+                            .max_shannon_criteria()
+                            + self.closest_criterias[self.selected_class].max_shannon_criteria())
+                            / 2.0;
+
+                        let kullback_delta = (self.criterias[self.selected_class]
+                            .max_kullback_criteria()
+                            + self.closest_criterias[self.selected_class].max_kullback_criteria())
+                            / 2.0;
+
+                        (shannon_delta, kullback_delta)
+                    })
+                    .collect();
+
+                let best_delta = results
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, (a_shannon, _)), (_, (b_shannon, _))| {
+                        a_shannon.total_cmp(b_shannon)
+                    })
+                    .map(|(i, _)| i as u8)
+                    .unwrap_or(0);
+
+                self.delta = best_delta;
+                self.corridor.delta(self.delta);
+                self.calculate_binary_matrices(ui.ctx());
+
+                self.optimization_results = Some(OptimizationResults::from(results));
+            }
         });
 
-        if ui.button("Delete").clicked() {
-            self.class_loader.classes.remove(self.selected_class);
-            self.set_base_class(0, ui);
+        ui.horizontal_wrapped(|ui| {
+            for i in 0..self.class_loader.exam_classes.len() {
+                if ui
+                    .add(egui::widgets::RadioButton::new(
+                        self.selected_exam_class == i,
+                        i.to_string(),
+                    ))
+                    .clicked()
+                {
+                    self.selected_exam_class = i;
+                }
+            }
+        });
+
+        if !self.class_loader.exam_classes.is_empty() && ui.button("Delete").clicked() {
+            self.class_loader
+                .exam_classes
+                .remove(self.selected_exam_class);
+            self.exam();
         }
     }
 
@@ -638,6 +721,7 @@ impl MyApp {
             self.add_button("Criteria", ui);
             self.add_button("Exam classes", ui);
             self.add_button("Exam results", ui);
+            self.add_button("Optimization results", ui);
         });
     }
 
