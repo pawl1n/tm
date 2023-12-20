@@ -82,24 +82,11 @@ impl eframe::App for MyApp {
                 }
             });
 
-        if *self.widget_stauses.get("Criteria").unwrap_or(&false) {
-            self.criterias.iter().enumerate().for_each(|(i, criteria)| {
-                egui::Window::new(format!("Criteria {i}"))
-                    .id(egui::Id::new(format!("Criteria{i}")))
-                    .default_size(egui::vec2(250.0, 200.0))
-                    .min_width(400.0)
-                    .min_height(150.0)
-                    .show(ctx, |ui| {
-                        criteria.draw(ui);
-                    });
-            });
-
-            self.closest_criterias
-                .iter()
-                .enumerate()
-                .for_each(|(i, criteria)| {
-                    egui::Window::new(format!("Criteria {i} closest"))
-                        .id(egui::Id::new(format!("Criteria{i} closest")))
+        egui::CentralPanel::default().frame(frame).show(ctx, |_| {
+            if *self.widget_stauses.get("Criteria").unwrap_or(&false) {
+                self.criterias.iter().enumerate().for_each(|(i, criteria)| {
+                    egui::Window::new(format!("Criteria {i}"))
+                        .id(egui::Id::new(format!("Criteria{i}")))
                         .default_size(egui::vec2(250.0, 200.0))
                         .min_width(400.0)
                         .min_height(150.0)
@@ -107,234 +94,249 @@ impl eframe::App for MyApp {
                             criteria.draw(ui);
                         });
                 });
-        }
 
-        if *self.widget_stauses.get("2D").unwrap_or(&false) {
-            self.sk.iter().enumerate().for_each(|(i, sk)| {
-                egui::Window::new(format!("2D {i}->{}", sk.closest))
-                    .id(egui::Id::new(format!("2D{i}")))
-                    .default_size(egui::vec2(250.0, 200.0))
-                    .min_width(250.0)
-                    .min_height(200.0)
-                    .show(ctx, |ui| {
-                        sk.paint(ui);
-                    });
-            });
-        }
-
-        if *self.widget_stauses.get("Information").unwrap_or(&false) {
-            egui::Window::new("Information")
-                .resizable(false)
-                .show(ctx, |ui| {
-                    frame.show(ui, |ui| self.add_stats(ui));
-                });
-        }
-
-        if !self.class_loader.classes.is_empty() {
-            if *self.widget_stauses.get("Settings").unwrap_or(&false) {
-                egui::Window::new("Settings")
-                    .resizable(false)
-                    .show(ctx, |ui| {
-                        frame.show(ui, |ui| self.add_controls(ui));
+                self.closest_criterias
+                    .iter()
+                    .enumerate()
+                    .for_each(|(i, criteria)| {
+                        egui::Window::new(format!("Criteria {i} closest"))
+                            .id(egui::Id::new(format!("Criteria{i} closest")))
+                            .default_size(egui::vec2(250.0, 200.0))
+                            .min_width(400.0)
+                            .min_height(150.0)
+                            .show(ctx, |ui| {
+                                criteria.draw(ui);
+                            });
                     });
             }
 
-            if *self.widget_stauses.get("Plot").unwrap_or(&false) {
-                egui::Window::new("Plot")
-                    .default_size(egui::vec2(400.0, 200.0))
+            if *self.widget_stauses.get("2D").unwrap_or(&false) {
+                self.sk.iter().enumerate().for_each(|(i, sk)| {
+                    egui::Window::new(format!("2D {i}->{}", sk.closest))
+                        .id(egui::Id::new(format!("2D{i}")))
+                        .default_size(egui::vec2(250.0, 200.0))
+                        .min_width(250.0)
+                        .min_height(200.0)
+                        .show(ctx, |ui| {
+                            sk.paint(ui);
+                        });
+                });
+            }
+
+            if *self.widget_stauses.get("Information").unwrap_or(&false) {
+                egui::Window::new("Information")
+                    .resizable(false)
                     .show(ctx, |ui| {
-                        frame.show(ui, |ui| {
-                            self.corridor.draw(ui);
+                        frame.show(ui, |ui| self.add_stats(ui));
+                    });
+            }
+
+            if !self.class_loader.classes.is_empty() {
+                if *self.widget_stauses.get("Settings").unwrap_or(&false) {
+                    egui::Window::new("Settings")
+                        .resizable(false)
+                        .show(ctx, |ui| {
+                            frame.show(ui, |ui| self.add_controls(ui));
+                        });
+                }
+
+                if *self.widget_stauses.get("Plot").unwrap_or(&false) {
+                    egui::Window::new("Plot")
+                        .default_size(egui::vec2(400.0, 200.0))
+                        .show(ctx, |ui| {
+                            frame.show(ui, |ui| {
+                                self.corridor.draw(ui);
+                            });
+                        });
+                }
+
+                if *self.widget_stauses.get("SK").unwrap_or(&false) && !self.sk.is_empty() {
+                    egui::Window::new("SK").show(ctx, |ui| {
+                        self.sk.iter().enumerate().for_each(|(i, sk)| {
+                            ui.add(egui::Label::new(format!("SK[1,{i}]")));
+
+                            egui::ScrollArea::horizontal()
+                                .id_source(format!("sk{i}.0"))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        sk.distances_to_self.iter().for_each(|x| {
+                                            ui.label(x.to_string());
+                                        });
+                                    });
+                                });
+                            ui.add(egui::Label::new(format!("SK[2,{i}]")));
+                            egui::ScrollArea::horizontal()
+                                .id_source(format!("sk{i}.1"))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        sk.distances_to_closest.iter().for_each(|x| {
+                                            ui.label(x.to_string());
+                                        });
+                                    });
+                                });
                         });
                     });
-            }
 
-            if *self.widget_stauses.get("SK").unwrap_or(&false) && !self.sk.is_empty() {
-                egui::Window::new("SK").show(ctx, |ui| {
-                    self.sk.iter().enumerate().for_each(|(i, sk)| {
-                        ui.add(egui::Label::new(format!("SK[1,{i}]")));
+                    egui::Window::new("SK_PARA").show(ctx, |ui| {
+                        self.sk.iter().enumerate().for_each(|(i, sk)| {
+                            ui.add(egui::Label::new(format!("SK_PARA[1,{i}]")));
 
-                        egui::ScrollArea::horizontal()
-                            .id_source(format!("sk{i}.0"))
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    sk.distances_to_self.iter().for_each(|x| {
-                                        ui.label(x.to_string());
+                            egui::ScrollArea::horizontal()
+                                .id_source(format!("sk_para{i}.0"))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        sk.distances_from_closest_to_itself.iter().for_each(|x| {
+                                            ui.label(x.to_string());
+                                        });
                                     });
                                 });
-                            });
-                        ui.add(egui::Label::new(format!("SK[2,{i}]")));
-                        egui::ScrollArea::horizontal()
-                            .id_source(format!("sk{i}.1"))
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    sk.distances_to_closest.iter().for_each(|x| {
-                                        ui.label(x.to_string());
+                            ui.add(egui::Label::new(format!("SK_PARA[2,{i}]")));
+                            egui::ScrollArea::horizontal()
+                                .id_source(format!("sk_para{i}.1"))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        sk.distances_from_closest.iter().for_each(|x| {
+                                            ui.label(x.to_string());
+                                        });
                                     });
                                 });
-                            });
+                        });
                     });
-                });
+                }
 
-                egui::Window::new("SK_PARA").show(ctx, |ui| {
-                    self.sk.iter().enumerate().for_each(|(i, sk)| {
-                        ui.add(egui::Label::new(format!("SK_PARA[1,{i}]")));
-
-                        egui::ScrollArea::horizontal()
-                            .id_source(format!("sk_para{i}.0"))
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    sk.distances_from_closest_to_itself.iter().for_each(|x| {
-                                        ui.label(x.to_string());
-                                    });
-                                });
-                            });
-                        ui.add(egui::Label::new(format!("SK_PARA[2,{i}]")));
-                        egui::ScrollArea::horizontal()
-                            .id_source(format!("sk_para{i}.1"))
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    sk.distances_from_closest.iter().for_each(|x| {
-                                        ui.label(x.to_string());
-                                    });
-                                });
-                            });
-                    });
-                });
-            }
-
-            if *self.widget_stauses.get("Classes").unwrap_or(&false) {
-                egui::Window::new("Classes")
-                    .resizable(false)
-                    .show(ctx, |ui| {
-                        egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                            frame.show(ui, |ui| {
-                                ui.add(egui::Label::new("Classes"));
-
-                                ui.horizontal(|ui| {
-                                    self.class_loader.classes.iter().for_each(|matrix| {
-                                        ui.image((
-                                            matrix.texture().id(),
-                                            matrix.texture().size_vec2(),
-                                        ));
-                                    });
-                                });
-
-                                if !self.matrices.is_empty() {
-                                    ui.add(egui::Label::new("Binary matrices"));
+                if *self.widget_stauses.get("Classes").unwrap_or(&false) {
+                    egui::Window::new("Classes")
+                        .resizable(false)
+                        .show(ctx, |ui| {
+                            egui::ScrollArea::new([true, true]).show(ui, |ui| {
+                                frame.show(ui, |ui| {
+                                    ui.add(egui::Label::new("Classes"));
 
                                     ui.horizontal(|ui| {
-                                        self.matrices.iter().for_each(|matrix| {
+                                        self.class_loader.classes.iter().for_each(|matrix| {
                                             ui.image((
                                                 matrix.texture().id(),
                                                 matrix.texture().size_vec2(),
                                             ));
                                         });
                                     });
-                                }
 
-                                if !self.reference_vectors.is_empty() {
-                                    ui.add(egui::Label::new("Reference vectors"));
+                                    if !self.matrices.is_empty() {
+                                        ui.add(egui::Label::new("Binary matrices"));
 
-                                    ui.horizontal(|ui| {
-                                        self.reference_vectors.iter().for_each(|vector| {
-                                            ui.image((
-                                                vector.texture().id(),
-                                                vector.texture().size_vec2(),
-                                            ));
+                                        ui.horizontal(|ui| {
+                                            self.matrices.iter().for_each(|matrix| {
+                                                ui.image((
+                                                    matrix.texture().id(),
+                                                    matrix.texture().size_vec2(),
+                                                ));
+                                            });
                                         });
-                                    });
-                                }
+                                    }
+
+                                    if !self.reference_vectors.is_empty() {
+                                        ui.add(egui::Label::new("Reference vectors"));
+
+                                        ui.horizontal(|ui| {
+                                            self.reference_vectors.iter().for_each(|vector| {
+                                                ui.image((
+                                                    vector.texture().id(),
+                                                    vector.texture().size_vec2(),
+                                                ));
+                                            });
+                                        });
+                                    }
+                                });
                             });
                         });
-                    });
-            }
+                }
 
-            if *self.widget_stauses.get("Exam classes").unwrap_or(&false) {
-                egui::Window::new("Exam classes")
-                    .resizable(false)
-                    .show(ctx, |ui| {
-                        egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                            frame.show(ui, |ui| {
-                                ui.add(egui::Label::new("Classes"));
-
-                                ui.horizontal(|ui| {
-                                    self.class_loader.exam_classes.iter().for_each(|matrix| {
-                                        ui.image((
-                                            matrix.texture().id(),
-                                            matrix.texture().size_vec2(),
-                                        ));
-                                    });
-                                });
-
-                                if !self.exam_matrices.is_empty() {
-                                    ui.add(egui::Label::new("Binary matrices"));
+                if *self.widget_stauses.get("Exam classes").unwrap_or(&false) {
+                    egui::Window::new("Exam classes")
+                        .resizable(false)
+                        .show(ctx, |ui| {
+                            egui::ScrollArea::new([true, true]).show(ui, |ui| {
+                                frame.show(ui, |ui| {
+                                    ui.add(egui::Label::new("Classes"));
 
                                     ui.horizontal(|ui| {
-                                        self.exam_matrices.iter().for_each(|matrix| {
+                                        self.class_loader.exam_classes.iter().for_each(|matrix| {
                                             ui.image((
                                                 matrix.texture().id(),
                                                 matrix.texture().size_vec2(),
                                             ));
                                         });
                                     });
-                                }
 
-                                if !self.exam_reference_vectors.is_empty() {
-                                    ui.add(egui::Label::new("Reference vectors"));
+                                    if !self.exam_matrices.is_empty() {
+                                        ui.add(egui::Label::new("Binary matrices"));
 
-                                    ui.horizontal(|ui| {
-                                        self.exam_reference_vectors.iter().for_each(|vector| {
-                                            ui.image((
-                                                vector.texture().id(),
-                                                vector.texture().size_vec2(),
-                                            ));
+                                        ui.horizontal(|ui| {
+                                            self.exam_matrices.iter().for_each(|matrix| {
+                                                ui.image((
+                                                    matrix.texture().id(),
+                                                    matrix.texture().size_vec2(),
+                                                ));
+                                            });
                                         });
-                                    });
-                                }
-                            });
-                        });
-                    });
-            }
-            if *self.widget_stauses.get("Exam results").unwrap_or(&false) {
-                egui::Window::new("Exam results").show(ctx, |ui| {
-                    self.exam_data
-                        .iter()
-                        .enumerate()
-                        .for_each(|(i, exam_result)| {
-                            ui.add(egui::Label::new(format!("Exam result for {i}")));
+                                    }
 
-                            ui.vertical(|ui| {
-                                exam_result.iter().for_each(|result| {
-                                    ui.label(format!(
-                                        "{} -> {}: {}",
-                                        result.class1, result.class2, result.result
-                                    ));
+                                    if !self.exam_reference_vectors.is_empty() {
+                                        ui.add(egui::Label::new("Reference vectors"));
+
+                                        ui.horizontal(|ui| {
+                                            self.exam_reference_vectors.iter().for_each(|vector| {
+                                                ui.image((
+                                                    vector.texture().id(),
+                                                    vector.texture().size_vec2(),
+                                                ));
+                                            });
+                                        });
+                                    }
                                 });
                             });
                         });
-                });
-            }
+                }
+                if *self.widget_stauses.get("Exam results").unwrap_or(&false) {
+                    egui::Window::new("Exam results").show(ctx, |ui| {
+                        self.exam_data
+                            .iter()
+                            .enumerate()
+                            .for_each(|(i, exam_result)| {
+                                ui.add(egui::Label::new(format!("Exam result for {i}")));
 
-            if *self
-                .widget_stauses
-                .get("Optimization results")
-                .unwrap_or(&false)
-            {
-                if let Some(optimization_results) = &self.optimization_results {
-                    egui::Window::new(format!(
-                        "Optimization result of delta for class {}",
-                        self.selected_class
-                    ))
-                    .default_size(egui::vec2(250.0, 200.0))
-                    .min_width(400.0)
-                    .min_height(150.0)
-                    .show(ctx, |ui| {
-                        optimization_results.draw(ui);
+                                ui.vertical(|ui| {
+                                    exam_result.iter().for_each(|result| {
+                                        ui.label(format!(
+                                            "{} -> {}: {}",
+                                            result.class1, result.class2, result.result
+                                        ));
+                                    });
+                                });
+                            });
                     });
-                };
+                }
+
+                if *self
+                    .widget_stauses
+                    .get("Optimization results")
+                    .unwrap_or(&false)
+                {
+                    if let Some(optimization_results) = &self.optimization_results {
+                        egui::Window::new(format!(
+                            "Optimization result of delta for class {}",
+                            self.selected_class
+                        ))
+                        .default_size(egui::vec2(250.0, 200.0))
+                        .min_width(400.0)
+                        .min_height(150.0)
+                        .show(ctx, |ui| {
+                            optimization_results.draw(ui);
+                        });
+                    };
+                }
             }
-        }
+        });
     }
 }
 
@@ -636,7 +638,9 @@ impl MyApp {
                 self.calculate_binary_matrices(ui.ctx());
             }
 
-            if ui.add(egui::Button::new("Optimize")).clicked() {
+            if self.class_loader.classes.len() > 1
+                && ui.add(egui::Button::new("Optimize")).clicked()
+            {
                 let results: Vec<(f64, f64, bool)> = (u8::MIN..u8::MAX)
                     .map(|delta| {
                         self.delta = delta;
@@ -670,10 +674,10 @@ impl MyApp {
                                 [self.selected_class]
                                 .characteristics[max_closest_shannon_criteria.unwrap().0];
 
-                            characteristics.d1 > 0.0
-                                && closest_characteristics.d1 > 0.0
-                                && characteristics.d2 > 0.0
-                                && closest_characteristics.d2 > 0.0
+                            characteristics.d1 > 0.5
+                                && closest_characteristics.d1 > 0.5
+                                && characteristics.d2 > 0.5
+                                && closest_characteristics.d2 > 0.5
                         } else {
                             false
                         };
