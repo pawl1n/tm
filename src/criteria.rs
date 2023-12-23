@@ -1,4 +1,4 @@
-use crate::draw::Draw;
+use crate::draw::Show;
 
 use eframe::egui::Ui;
 use egui_plot::{Legend, Line, Plot, PlotPoints};
@@ -179,8 +179,8 @@ impl Criteria {
     }
 }
 
-impl Draw for Criteria {
-    fn draw(&self, ui: &mut Ui) {
+impl Show for Criteria {
+    fn show(&self, ui: &mut Ui) {
         let available_width = ui.max_rect().width() - 10.0;
         let available_height = ui.max_rect().height() - 10.0;
 

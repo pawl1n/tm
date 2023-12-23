@@ -1,5 +1,5 @@
 use eframe::egui::Ui;
 
-pub trait Draw {
-    fn draw(&self, ui: &mut Ui);
+pub trait Show {
+    fn show(&self, ui: &mut Ui);
 }

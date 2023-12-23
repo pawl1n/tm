@@ -1,4 +1,4 @@
-use crate::draw::Draw;
+use crate::draw::Show;
 use eframe::egui::Ui;
 use egui_plot::{Legend, Line, Plot, PlotPoints};
 
@@ -8,8 +8,8 @@ pub struct OptimizationResults {
     pub working_space: Vec<bool>,
 }
 
-impl Draw for OptimizationResults {
-    fn draw(&self, ui: &mut Ui) {
+impl Show for OptimizationResults {
+    fn show(&self, ui: &mut Ui) {
         Plot::new("Optimization results")
             .legend(Legend::default())
             .show(ui, |ui| {

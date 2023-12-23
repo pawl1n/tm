@@ -1,25 +1,28 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+mod binary_representation;
 mod class_data;
 mod class_loader;
+mod class_manager;
 mod corridor;
 mod criteria;
 mod draw;
 mod exam_data;
 mod hamming;
 mod optimization_results;
-mod painter;
+mod sk;
 
-use class_data::ClassData;
+use class_loader::ClassLoader;
+use class_manager::ClassManager;
 use corridor::Corridor;
-use draw::Draw;
+use draw::Show;
 
-use eframe::{egui, epaint::ColorImage};
+use eframe::egui;
 use exam_data::{ExamData, ExamResult};
+use hamming::SKManager;
 use optimization_results::OptimizationResults;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::vec2(1000.0, 600.0)),
         ..Default::default()
     };
 
@@ -37,21 +40,17 @@ fn main() -> Result<(), eframe::Error> {
 
 #[derive(Default)]
 struct MyApp {
-    selected_class: usize,
-    matrices: Vec<ClassData>,
-    exam_matrices: Vec<ClassData>,
     delta: u8,
     corridor: Corridor,
-    reference_vectors: Vec<ClassData>,
-    exam_reference_vectors: Vec<ClassData>,
-    sk: Vec<painter::SK>,
     widget_stauses: std::collections::HashMap<String, bool>,
     criterias: Vec<criteria::Criteria>,
-    class_loader: class_loader::ClassLoader,
     closest_criterias: Vec<criteria::Criteria>,
     exam_data: Vec<Vec<ExamData>>,
-    selected_exam_class: usize,
     optimization_results: Option<OptimizationResults>,
+    class_manager: ClassManager,
+    exam_class_manager: ClassManager,
+    class_loader: ClassLoader,
+    sk_manager: SKManager,
 }
 
 impl eframe::App for MyApp {
@@ -62,7 +61,7 @@ impl eframe::App for MyApp {
             ..Default::default()
         };
 
-        egui::SidePanel::right("Widgets")
+        egui::TopBottomPanel::top("Stages")
             .frame(frame)
             .show(ctx, |ui| {
                 self.add_widgets_controls(ui);
@@ -71,14 +70,22 @@ impl eframe::App for MyApp {
         egui::TopBottomPanel::bottom(egui::Id::new("Loader"))
             .frame(frame)
             .show(ctx, |ui| {
-                if self.class_loader.show(ui).loaded() {
-                    if self.class_loader.classes.len() == 1 {
-                        self.corridor = Corridor::new(
-                            self.class_loader.classes[0].bytes(),
-                            self.class_loader.size.unwrap(),
-                        )
+                if let Some(data) = self.class_loader.show(&self.class_manager, ui).loaded() {
+                    if self.class_manager.classes.is_empty() {
+                        self.corridor = Corridor::new(&data.bytes, self.class_loader.size)
                     }
-                    self.calculate_binary_matrices(ui.ctx());
+                    match self.class_loader.class_type {
+                        class_loader::ClassType::Training => {
+                            self.class_manager.add_class(data.clone());
+                            self.recalculate(ctx);
+                        }
+                        class_loader::ClassType::Exam => {
+                            self.exam_class_manager.add_class(data.clone());
+                            self.exam_class_manager
+                                .recalculate_binary_representation(&self.corridor.allowances, ctx);
+                            self.exam();
+                        }
+                    }
                 }
             });
 
@@ -91,7 +98,7 @@ impl eframe::App for MyApp {
                         .min_width(400.0)
                         .min_height(150.0)
                         .show(ctx, |ui| {
-                            criteria.draw(ui);
+                            criteria.show(ui);
                         });
                 });
 
@@ -105,13 +112,13 @@ impl eframe::App for MyApp {
                             .min_width(400.0)
                             .min_height(150.0)
                             .show(ctx, |ui| {
-                                criteria.draw(ui);
+                                criteria.show(ui);
                             });
                     });
             }
 
             if *self.widget_stauses.get("2D").unwrap_or(&false) {
-                self.sk.iter().enumerate().for_each(|(i, sk)| {
+                self.sk_manager.sk.iter().enumerate().for_each(|(i, sk)| {
                     egui::Window::new(format!("2D {i}->{}", sk.closest))
                         .id(egui::Id::new(format!("2D{i}")))
                         .default_size(egui::vec2(250.0, 200.0))
@@ -131,210 +138,86 @@ impl eframe::App for MyApp {
                     });
             }
 
-            if !self.class_loader.classes.is_empty() {
-                if *self.widget_stauses.get("Settings").unwrap_or(&false) {
-                    egui::Window::new("Settings")
-                        .resizable(false)
-                        .show(ctx, |ui| {
-                            frame.show(ui, |ui| self.add_controls(ui));
-                        });
-                }
+            if *self.widget_stauses.get("Settings").unwrap_or(&false) {
+                egui::Window::new("Settings")
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        frame.show(ui, |ui| self.add_controls(ui));
+                    });
+            }
 
-                if *self.widget_stauses.get("Plot").unwrap_or(&false) {
-                    egui::Window::new("Plot")
-                        .default_size(egui::vec2(400.0, 200.0))
-                        .show(ctx, |ui| {
+            if *self.widget_stauses.get("Plot").unwrap_or(&false) {
+                egui::Window::new("Plot")
+                    .default_size(egui::vec2(400.0, 200.0))
+                    .show(ctx, |ui| {
+                        frame.show(ui, |ui| {
+                            self.corridor.show(ui);
+                        });
+                    });
+            }
+
+            if *self.widget_stauses.get("Classes").unwrap_or(&false) {
+                egui::Window::new("Classes")
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        egui::ScrollArea::new([true, true]).show(ui, |ui| {
                             frame.show(ui, |ui| {
-                                self.corridor.draw(ui);
+                                self.class_manager.show(ui);
+                                self.class_manager.binary_representations.show(ui);
                             });
-                        });
-                }
-
-                if *self.widget_stauses.get("SK").unwrap_or(&false) && !self.sk.is_empty() {
-                    egui::Window::new("SK").show(ctx, |ui| {
-                        self.sk.iter().enumerate().for_each(|(i, sk)| {
-                            ui.add(egui::Label::new(format!("SK[1,{i}]")));
-
-                            egui::ScrollArea::horizontal()
-                                .id_source(format!("sk{i}.0"))
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        sk.distances_to_self.iter().for_each(|x| {
-                                            ui.label(x.to_string());
-                                        });
-                                    });
-                                });
-                            ui.add(egui::Label::new(format!("SK[2,{i}]")));
-                            egui::ScrollArea::horizontal()
-                                .id_source(format!("sk{i}.1"))
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        sk.distances_to_closest.iter().for_each(|x| {
-                                            ui.label(x.to_string());
-                                        });
-                                    });
-                                });
                         });
                     });
+            }
 
-                    egui::Window::new("SK_PARA").show(ctx, |ui| {
-                        self.sk.iter().enumerate().for_each(|(i, sk)| {
-                            ui.add(egui::Label::new(format!("SK_PARA[1,{i}]")));
-
-                            egui::ScrollArea::horizontal()
-                                .id_source(format!("sk_para{i}.0"))
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        sk.distances_from_closest_to_itself.iter().for_each(|x| {
-                                            ui.label(x.to_string());
-                                        });
-                                    });
-                                });
-                            ui.add(egui::Label::new(format!("SK_PARA[2,{i}]")));
-                            egui::ScrollArea::horizontal()
-                                .id_source(format!("sk_para{i}.1"))
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        sk.distances_from_closest.iter().for_each(|x| {
-                                            ui.label(x.to_string());
-                                        });
-                                    });
-                                });
+            if *self.widget_stauses.get("Exam classes").unwrap_or(&false) {
+                egui::Window::new("Exam classes")
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        egui::ScrollArea::new([true, true]).show(ui, |ui| {
+                            frame.show(ui, |ui| {
+                                self.exam_class_manager.show(ui);
+                                self.exam_class_manager.binary_representations.show(ui);
+                            });
                         });
                     });
-                }
+            }
+            if *self.widget_stauses.get("Exam results").unwrap_or(&false) {
+                egui::Window::new("Exam results").show(ctx, |ui| {
+                    self.exam_data
+                        .iter()
+                        .enumerate()
+                        .for_each(|(i, exam_result)| {
+                            ui.add(egui::Label::new(format!("Exam result for {i}")));
 
-                if *self.widget_stauses.get("Classes").unwrap_or(&false) {
-                    egui::Window::new("Classes")
-                        .resizable(false)
-                        .show(ctx, |ui| {
-                            egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                                frame.show(ui, |ui| {
-                                    ui.add(egui::Label::new("Classes"));
-
-                                    ui.horizontal(|ui| {
-                                        self.class_loader.classes.iter().for_each(|matrix| {
-                                            ui.image((
-                                                matrix.texture().id(),
-                                                matrix.texture().size_vec2(),
-                                            ));
-                                        });
-                                    });
-
-                                    if !self.matrices.is_empty() {
-                                        ui.add(egui::Label::new("Binary matrices"));
-
-                                        ui.horizontal(|ui| {
-                                            self.matrices.iter().for_each(|matrix| {
-                                                ui.image((
-                                                    matrix.texture().id(),
-                                                    matrix.texture().size_vec2(),
-                                                ));
-                                            });
-                                        });
-                                    }
-
-                                    if !self.reference_vectors.is_empty() {
-                                        ui.add(egui::Label::new("Reference vectors"));
-
-                                        ui.horizontal(|ui| {
-                                            self.reference_vectors.iter().for_each(|vector| {
-                                                ui.image((
-                                                    vector.texture().id(),
-                                                    vector.texture().size_vec2(),
-                                                ));
-                                            });
-                                        });
-                                    }
+                            ui.vertical(|ui| {
+                                exam_result.iter().for_each(|result| {
+                                    ui.label(format!(
+                                        "{} -> {}: {}",
+                                        result.class1, result.class2, result.result
+                                    ));
                                 });
                             });
                         });
-                }
+                });
+            }
 
-                if *self.widget_stauses.get("Exam classes").unwrap_or(&false) {
-                    egui::Window::new("Exam classes")
-                        .resizable(false)
-                        .show(ctx, |ui| {
-                            egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                                frame.show(ui, |ui| {
-                                    ui.add(egui::Label::new("Classes"));
-
-                                    ui.horizontal(|ui| {
-                                        self.class_loader.exam_classes.iter().for_each(|matrix| {
-                                            ui.image((
-                                                matrix.texture().id(),
-                                                matrix.texture().size_vec2(),
-                                            ));
-                                        });
-                                    });
-
-                                    if !self.exam_matrices.is_empty() {
-                                        ui.add(egui::Label::new("Binary matrices"));
-
-                                        ui.horizontal(|ui| {
-                                            self.exam_matrices.iter().for_each(|matrix| {
-                                                ui.image((
-                                                    matrix.texture().id(),
-                                                    matrix.texture().size_vec2(),
-                                                ));
-                                            });
-                                        });
-                                    }
-
-                                    if !self.exam_reference_vectors.is_empty() {
-                                        ui.add(egui::Label::new("Reference vectors"));
-
-                                        ui.horizontal(|ui| {
-                                            self.exam_reference_vectors.iter().for_each(|vector| {
-                                                ui.image((
-                                                    vector.texture().id(),
-                                                    vector.texture().size_vec2(),
-                                                ));
-                                            });
-                                        });
-                                    }
-                                });
-                            });
-                        });
-                }
-                if *self.widget_stauses.get("Exam results").unwrap_or(&false) {
-                    egui::Window::new("Exam results").show(ctx, |ui| {
-                        self.exam_data
-                            .iter()
-                            .enumerate()
-                            .for_each(|(i, exam_result)| {
-                                ui.add(egui::Label::new(format!("Exam result for {i}")));
-
-                                ui.vertical(|ui| {
-                                    exam_result.iter().for_each(|result| {
-                                        ui.label(format!(
-                                            "{} -> {}: {}",
-                                            result.class1, result.class2, result.result
-                                        ));
-                                    });
-                                });
-                            });
+            if *self
+                .widget_stauses
+                .get("Optimization results")
+                .unwrap_or(&false)
+            {
+                if let Some(optimization_results) = &self.optimization_results {
+                    egui::Window::new(format!(
+                        "Optimization result of delta for class {}",
+                        self.class_manager.selected_class
+                    ))
+                    .default_size(egui::vec2(250.0, 200.0))
+                    .min_width(400.0)
+                    .min_height(150.0)
+                    .show(ctx, |ui| {
+                        optimization_results.show(ui);
                     });
-                }
-
-                if *self
-                    .widget_stauses
-                    .get("Optimization results")
-                    .unwrap_or(&false)
-                {
-                    if let Some(optimization_results) = &self.optimization_results {
-                        egui::Window::new(format!(
-                            "Optimization result of delta for class {}",
-                            self.selected_class
-                        ))
-                        .default_size(egui::vec2(250.0, 200.0))
-                        .min_width(400.0)
-                        .min_height(150.0)
-                        .show(ctx, |ui| {
-                            optimization_results.draw(ui);
-                        });
-                    };
-                }
+                };
             }
         });
     }
@@ -343,24 +226,29 @@ impl eframe::App for MyApp {
 impl MyApp {
     fn exam(&mut self) {
         self.exam_data = self
-            .exam_matrices
+            .exam_class_manager
+            .binary_representations
+            .matrices
             .iter()
             .map(|matrix| {
-                self.sk
+                self.sk_manager
+                    .sk
                     .iter()
                     .enumerate()
                     .map(|(i, sk)| {
-                        let results1: Vec<f64> = hamming::distances_between(
-                            matrix.bytes(),
-                            self.reference_vectors[i].bytes(),
+                        let results1: Vec<f64> = SKManager::distances_between(
+                            &matrix.bytes,
+                            &self.class_manager.binary_representations.reference_vectors[i].bytes,
                         )
                         .iter()
                         .map(|x| 1.0 - *x as f64 / self.criterias[i].min_radius())
                         .collect();
 
-                        let results2: Vec<f64> = hamming::distances_between(
-                            matrix.bytes(),
-                            self.reference_vectors[sk.closest].bytes(),
+                        let results2: Vec<f64> = SKManager::distances_between(
+                            &matrix.bytes,
+                            &self.class_manager.binary_representations.reference_vectors
+                                [sk.closest]
+                                .bytes,
                         )
                         .iter()
                         .map(|x| 1.0 - *x as f64 / self.closest_criterias[i].min_radius())
@@ -378,10 +266,8 @@ impl MyApp {
                             }
                         }
 
-                        let mu1 = results1.iter().sum::<f64>()
-                            / self.class_loader.size.unwrap_or((0, 0)).1 as f64;
-                        let mu2 = results2.iter().sum::<f64>()
-                            / self.class_loader.size.unwrap_or((0, 0)).1 as f64;
+                        let mu1 = results1.iter().sum::<f64>() / self.class_loader.size.1 as f64;
+                        let mu2 = results2.iter().sum::<f64>() / self.class_loader.size.1 as f64;
 
                         let result = if mu1 > 0.0 && mu2 < 0.0 {
                             ExamResult::Found(i, results)
@@ -399,9 +285,10 @@ impl MyApp {
     }
 
     fn calculate_criteria(&mut self) {
-        let (_, number_of_realizations) = self.class_loader.size.expect("Expected size");
+        let (_, number_of_realizations) = self.class_loader.size;
 
         self.criterias = self
+            .sk_manager
             .sk
             .iter_mut()
             .map(|sk| {
@@ -418,6 +305,7 @@ impl MyApp {
             .collect();
 
         self.closest_criterias = self
+            .sk_manager
             .sk
             .iter_mut()
             .map(|sk| {
@@ -434,197 +322,40 @@ impl MyApp {
             .collect();
     }
 
-    fn calculate_code_distances(&mut self) {
-        self.sk = Vec::with_capacity(self.class_loader.classes.len());
+    fn recalculate(&mut self, ctx: &egui::Context) {
+        self.class_manager
+            .recalculate_binary_representation(&self.corridor.allowances, ctx);
+        self.exam_class_manager
+            .recalculate_binary_representation(&self.corridor.allowances, ctx);
 
-        if self.class_loader.classes.len() <= 1 {
-            return;
-        }
+        self.sk_manager = SKManager::new(
+            &self.class_manager.binary_representations.matrices,
+            &self.class_manager.binary_representations.reference_vectors,
+        );
 
-        for index in 0..self.matrices.len() {
-            let center = self.reference_vectors[index].bytes();
-
-            let distances_to_center =
-                hamming::distances_between(self.matrices[index].bytes(), center);
-            let (distances_to_closest, distance, closest) = self
-                .reference_vectors
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| i != &index)
-                .map(|(i, reference_vector)| {
-                    (
-                        i,
-                        hamming::distance_between(reference_vector.bytes(), center),
-                    )
-                })
-                .min_by_key(|(_, distance)| *distance)
-                .map_or_else(
-                    || (Vec::new(), 0, 0),
-                    |(closest, distance)| {
-                        (
-                            hamming::distances_between(self.matrices[closest].bytes(), center),
-                            distance,
-                            closest,
-                        )
-                    },
-                );
-
-            let center = self.reference_vectors[closest].bytes();
-
-            let distances_from_closest_to_itself =
-                hamming::distances_between(self.matrices[closest].bytes(), center);
-            let distances_from_closest =
-                hamming::distances_between(self.matrices[index].bytes(), center);
-
-            self.sk.push(painter::SK::new(
-                distances_to_center,
-                distances_to_closest,
-                distances_from_closest_to_itself,
-                distances_from_closest,
-                distance,
-                closest,
-            ));
-        }
-    }
-
-    fn calculate_binary_matrices(&mut self, ctx: &egui::Context) {
-        if let Some(size) = self.class_loader.size {
-            let lower = self.corridor.lower_allowance();
-            let upper = self.corridor.upper_allowance();
-
-            self.matrices =
-                Self::binary_matrices_for(&self.class_loader.classes, size, lower, upper, ctx);
-            self.exam_matrices =
-                Self::binary_matrices_for(&self.class_loader.exam_classes, size, lower, upper, ctx);
-
-            self.calculate_reference_vectors(size, ctx);
-            self.calculate_code_distances();
-            self.calculate_criteria();
-            self.exam();
-        }
-    }
-
-    fn binary_matrices_for(
-        classes: &[ClassData],
-        size: (usize, usize),
-        lower: &[u8],
-        upper: &[u8],
-        ctx: &egui::Context,
-    ) -> Vec<ClassData> {
-        let (attributes, realizations) = size;
-
-        classes
-            .iter()
-            .enumerate()
-            .map(|(i, class)| {
-                let key: Vec<u8> = class
-                    .bytes()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, x)| {
-                        let index = i.rem_euclid(attributes);
-                        if *x >= lower[index] && *x <= upper[index] {
-                            u8::MAX
-                        } else {
-                            u8::MIN
-                        }
-                    })
-                    .collect();
-
-                let image = ColorImage::from_gray([attributes, realizations], &key);
-                let texture = ctx.load_texture(
-                    "matrix".to_owned() + &i.to_string(),
-                    image,
-                    Default::default(),
-                );
-
-                ClassData::new(key, texture)
-            })
-            .collect()
-    }
-
-    fn calculate_reference_vectors(&mut self, size: (usize, usize), ctx: &egui::Context) {
-        self.reference_vectors = Self::reference_vectors_for(&self.matrices, size, ctx);
-        self.exam_reference_vectors = Self::reference_vectors_for(&self.exam_matrices, size, ctx);
-    }
-
-    fn reference_vectors_for(
-        matrices: &[ClassData],
-        size: (usize, usize),
-        ctx: &egui::Context,
-    ) -> Vec<ClassData> {
-        let (attributes, realizations) = size;
-
-        matrices
-            .iter()
-            .enumerate()
-            .map(|(i, matrix)| {
-                let mut vector = Vec::with_capacity(attributes);
-
-                for i in 0..attributes {
-                    let mut count = 0;
-
-                    for j in 0..realizations {
-                        if matrix.bytes()[i + j * attributes] == u8::MAX {
-                            count += 1;
-                        }
-                    }
-
-                    vector.push(if count > realizations / 2 {
-                        u8::MAX
-                    } else {
-                        u8::MIN
-                    });
-                }
-
-                let image = ColorImage::from_gray([attributes, 10], &vector.repeat(10));
-                let texture = ctx.load_texture(
-                    "reference_vector".to_owned() + &i.to_string(),
-                    image,
-                    Default::default(),
-                );
-
-                ClassData::new(vector, texture)
-            })
-            .collect()
+        self.calculate_criteria();
+        self.exam();
     }
 
     fn set_base_class(&mut self, class: usize, ui: &mut egui::Ui) {
-        if self.class_loader.classes.len() <= class {
+        self.optimization_results = None;
+        self.class_manager.selected_class = class;
+
+        if self.class_manager.classes.len() <= class {
             return;
         }
 
-        self.selected_class = class;
         self.corridor.set_base_class(
-            self.class_loader.classes[self.selected_class].bytes(),
-            self.class_loader.size.unwrap(),
+            &self.class_manager.classes[self.class_manager.selected_class].bytes,
+            self.class_manager.classes[0].texture.size().into(),
         );
-        self.calculate_binary_matrices(ui.ctx());
-        self.optimization_results = None;
+
+        self.recalculate(ui.ctx());
     }
 
     fn add_controls(&mut self, ui: &mut egui::Ui) {
-        let selected = &self.class_loader.classes[self.selected_class];
-        ui.add(egui::Label::new("Selected class"));
-        ui.image((selected.texture().id(), selected.texture().size_vec2()));
-        ui.add(egui::Label::new("Select class:"));
-        ui.horizontal_wrapped(|ui| {
-            for i in 0..self.class_loader.classes.len() {
-                if ui
-                    .add(egui::widgets::RadioButton::new(
-                        self.selected_class == i,
-                        i.to_string(),
-                    ))
-                    .clicked()
-                {
-                    self.set_base_class(i, ui);
-                }
-            }
-        });
-
-        if ui.button("Delete").clicked() {
-            self.class_loader.classes.remove(self.selected_class);
-            self.set_base_class(0, ui);
+        if self.class_manager.show_controls(ui).changed() {
+            self.set_base_class(self.class_manager.selected_class, ui);
         }
 
         ui.horizontal(|ui| {
@@ -635,31 +366,35 @@ impl MyApp {
             {
                 self.optimization_results = None;
                 self.corridor.delta(self.delta);
-                self.calculate_binary_matrices(ui.ctx());
+                self.recalculate(ui.ctx());
             }
 
-            if self.class_loader.classes.len() > 1
+            if self.class_manager.classes.len() > 1
                 && ui.add(egui::Button::new("Optimize")).clicked()
             {
                 let results: Vec<(f64, f64, bool)> = (u8::MIN..u8::MAX)
                     .map(|delta| {
                         self.delta = delta;
                         self.corridor.delta(self.delta);
-                        self.calculate_binary_matrices(ui.ctx());
+                        self.recalculate(ui.ctx());
 
-                        let max_shannon_criteria =
-                            self.criterias[self.selected_class].max_shannon_criteria();
-                        let max_closest_shannon_criteria =
-                            self.closest_criterias[self.selected_class].max_shannon_criteria();
+                        let max_shannon_criteria = self.criterias
+                            [self.class_manager.selected_class]
+                            .max_shannon_criteria();
+                        let max_closest_shannon_criteria = self.closest_criterias
+                            [self.class_manager.selected_class]
+                            .max_shannon_criteria();
 
                         let shannon_delta = (max_shannon_criteria.map_or(0.0, |c| c.1)
                             + max_closest_shannon_criteria.map_or(0.0, |c| c.1))
                             / 2.0;
 
-                        let max_kullback_criteria =
-                            self.criterias[self.selected_class].max_kullback_criteria();
-                        let max_closest_kullback_criteria =
-                            self.closest_criterias[self.selected_class].max_kullback_criteria();
+                        let max_kullback_criteria = self.criterias
+                            [self.class_manager.selected_class]
+                            .max_kullback_criteria();
+                        let max_closest_kullback_criteria = self.closest_criterias
+                            [self.class_manager.selected_class]
+                            .max_kullback_criteria();
 
                         let kullback_delta = (max_kullback_criteria.map_or(0.0, |c| c.1)
                             + max_closest_kullback_criteria.map_or(0.0, |c| c.1))
@@ -668,10 +403,11 @@ impl MyApp {
                         let is_in_working_space = if max_shannon_criteria.is_some()
                             && max_closest_shannon_criteria.is_some()
                         {
-                            let characteristics = &self.criterias[self.selected_class]
+                            let characteristics = &self.criterias
+                                [self.class_manager.selected_class]
                                 .characteristics[max_shannon_criteria.unwrap().0];
                             let closest_characteristics = &self.closest_criterias
-                                [self.selected_class]
+                                [self.class_manager.selected_class]
                                 .characteristics[max_closest_shannon_criteria.unwrap().0];
 
                             characteristics.d1 > 0.5
@@ -698,30 +434,13 @@ impl MyApp {
 
                 self.delta = best_delta;
                 self.corridor.delta(self.delta);
-                self.calculate_binary_matrices(ui.ctx());
+                self.recalculate(ui.ctx());
 
                 self.optimization_results = Some(OptimizationResults::from(results));
             }
         });
 
-        ui.horizontal_wrapped(|ui| {
-            for i in 0..self.class_loader.exam_classes.len() {
-                if ui
-                    .add(egui::widgets::RadioButton::new(
-                        self.selected_exam_class == i,
-                        i.to_string(),
-                    ))
-                    .clicked()
-                {
-                    self.selected_exam_class = i;
-                }
-            }
-        });
-
-        if !self.class_loader.exam_classes.is_empty() && ui.button("Delete").clicked() {
-            self.class_loader
-                .exam_classes
-                .remove(self.selected_exam_class);
+        if self.exam_class_manager.show_controls(ui).changed() {
             self.exam();
         }
     }
@@ -729,25 +448,28 @@ impl MyApp {
     fn add_stats(&self, ui: &mut egui::Ui) {
         ui.add(egui::Label::new(format!(
             "Number of realizations: {}",
-            self.class_loader.size.map_or(0, |s| s.1)
+            self.class_loader.size.0
         )));
         ui.add(egui::Label::new(format!(
             "Number of attributes: {}",
-            self.class_loader.size.map_or(0, |s| s.0)
+            self.class_loader.size.1
         )));
         ui.add(egui::Label::new(format!(
             "Number of classes: {}",
-            self.class_loader.classes.len()
+            self.class_manager.classes.len()
+        )));
+        ui.add(egui::Label::new(format!(
+            "Number of exam classes: {}",
+            self.exam_class_manager.classes.len()
         )));
     }
 
     fn add_widgets_controls(&mut self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
+        ui.horizontal(|ui| {
             self.add_button("Information", ui);
             self.add_button("Settings", ui);
             self.add_button("Classes", ui);
-            self.add_button("Plot", ui);
-            self.add_button("SK", ui);
+            self.add_button("Allowances", ui);
             self.add_button("2D", ui);
             self.add_button("Criteria", ui);
             self.add_button("Exam classes", ui);
@@ -757,9 +479,15 @@ impl MyApp {
     }
 
     fn add_button(&mut self, label: &str, ui: &mut egui::Ui) {
-        ui.checkbox(
-            self.widget_stauses.entry(label.to_string()).or_default(),
-            label,
-        );
+        if ui
+            .selectable_label(
+                *self.widget_stauses.entry(label.to_string()).or_default(),
+                label,
+            )
+            .clicked()
+        {
+            *self.widget_stauses.get_mut(label).unwrap() =
+                !*self.widget_stauses.get(label).unwrap();
+        }
     }
 }
