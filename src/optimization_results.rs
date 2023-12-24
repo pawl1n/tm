@@ -1,4 +1,4 @@
-use crate::draw::Draw;
+use crate::draw::Show;
 use eframe::egui::Ui;
 use egui_plot::{Legend, Line, Plot, PlotPoints};
 
@@ -8,15 +8,35 @@ pub struct OptimizationResults {
     pub working_space: Vec<bool>,
 }
 
-impl Draw for OptimizationResults {
-    fn draw(&self, ui: &mut Ui) {
+impl Show for OptimizationResults {
+    fn show(&self, ui: &mut Ui) {
         Plot::new("Optimization results")
             .legend(Legend::default())
+            .auto_bounds_x()
+            .auto_bounds_y()
             .show(ui, |ui| {
                 ui.line(
-                    Line::new(PlotPoints::from_ys_f64(&self.kullback_criteria)).name("Kullback"),
+                    Line::new(
+                        self.kullback_criteria
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, &y)| y != 0.0)
+                            .map(|(i, &y)| [i as f64, y])
+                            .collect::<Vec<[f64; 2]>>(),
+                    )
+                    .name("Kullback"),
                 );
-                ui.line(Line::new(PlotPoints::from_ys_f64(&self.shannon_criteria)).name("Shannon"));
+                ui.line(
+                    Line::new(
+                        self.shannon_criteria
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, &y)| y != 0.0)
+                            .map(|(i, &y)| [i as f64, y])
+                            .collect::<Vec<[f64; 2]>>(),
+                    )
+                    .name("Shannon"),
+                );
 
                 let points: PlotPoints = self
                     .working_space

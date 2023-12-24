@@ -1,12 +1,17 @@
-use super::draw::Draw;
+use super::draw::Show;
 use eframe::egui::Ui;
 use egui_plot::{Legend, Line, Plot};
+
+#[derive(Default, Debug)]
+pub struct Allowances {
+    pub lower: Vec<u8>,
+    pub upper: Vec<u8>,
+}
 
 #[derive(Debug, Default)]
 pub struct Corridor {
     expectation: Vec<u8>,
-    lower_allowance: Vec<u8>,
-    upper_allowance: Vec<u8>,
+    pub allowances: Allowances,
     delta: u8,
 }
 
@@ -32,14 +37,6 @@ impl Corridor {
         self.calculate_allowances();
     }
 
-    pub fn lower_allowance(&self) -> &[u8] {
-        &self.lower_allowance
-    }
-
-    pub fn upper_allowance(&self) -> &[u8] {
-        &self.upper_allowance
-    }
-
     fn calculate_allowances(&mut self) {
         self.calculate_lower_allowance();
         self.calculate_upper_allowance();
@@ -62,7 +59,7 @@ impl Corridor {
     }
 
     fn calculate_lower_allowance(&mut self) {
-        self.lower_allowance = self
+        self.allowances.lower = self
             .expectation
             .iter()
             .map(|x| x.saturating_sub(self.delta))
@@ -70,7 +67,7 @@ impl Corridor {
     }
 
     fn calculate_upper_allowance(&mut self) {
-        self.upper_allowance = self
+        self.allowances.upper = self
             .expectation
             .iter()
             .map(|x| x.saturating_add(self.delta))
@@ -78,17 +75,19 @@ impl Corridor {
     }
 }
 
-impl Draw for Corridor {
-    fn draw(&self, ui: &mut Ui) {
+impl Show for Corridor {
+    fn show(&self, ui: &mut Ui) {
         Plot::new("Corridor")
             .legend(Legend::default())
+            .auto_bounds_x()
+            .auto_bounds_y()
             .show(ui, |ui| {
                 ui.line(Line::new(vec_to_plot_points(&self.expectation)).name("Expectation"));
                 ui.line(
-                    Line::new(vec_to_plot_points(&self.lower_allowance)).name("Lower allowance"),
+                    Line::new(vec_to_plot_points(&self.allowances.lower)).name("Lower allowance"),
                 );
                 ui.line(
-                    Line::new(vec_to_plot_points(&self.upper_allowance)).name("Upper allowance"),
+                    Line::new(vec_to_plot_points(&self.allowances.upper)).name("Upper allowance"),
                 );
             });
     }

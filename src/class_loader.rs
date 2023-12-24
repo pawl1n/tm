@@ -1,4 +1,6 @@
-use super::class_data::ClassData;
+use crate::class_manager::ClassManager;
+
+use super::class_data::TextureData;
 use eframe::egui::{Button, Context, Label, RadioButton, TextEdit, Ui};
 use eframe::epaint::ColorImage;
 use image::{open, EncodableLayout};
@@ -17,55 +19,47 @@ impl Default for ClassType {
 
 #[derive(Default)]
 pub struct LoaderResponse {
-    loaded: bool,
+    pub loaded: Option<TextureData>,
 }
 
 impl LoaderResponse {
-    pub fn new(loaded: bool) -> Self {
+    pub fn new(loaded: Option<TextureData>) -> Self {
         Self { loaded }
     }
 
-    pub fn loaded(&self) -> bool {
-        self.loaded
+    pub fn loaded(&self) -> &Option<TextureData> {
+        &self.loaded
     }
 }
 
 #[derive(Default)]
 pub struct ClassLoader {
-    pub size: Option<(usize, usize)>,
-    pub classes: Vec<ClassData>,
-    class_type: ClassType,
-    error: Option<String>,
-    path: String,
-    pub exam_classes: Vec<ClassData>,
+    pub size: (usize, usize),
+    pub class_type: ClassType,
+    pub error: Option<String>,
+    pub path: String,
 }
 
 impl ClassLoader {
-    pub fn show(&mut self, ui: &mut Ui) -> LoaderResponse {
+    pub fn show(
+        &mut self,
+        manager: &ClassManager,
+        exam_manager: &ClassManager,
+        ui: &mut Ui,
+    ) -> LoaderResponse {
         let mut response = LoaderResponse::default();
 
         ui.horizontal(|ui| {
             ui.add(TextEdit::singleline(&mut self.path));
 
             if ui.add(Button::new("Load image")).clicked() {
-                match self.load_grayscale(ui.ctx()) {
+                match self.load_grayscale(manager, exam_manager, ui.ctx()) {
                     Err(msg) => {
                         self.error = Some(msg.to_string());
                     }
                     Ok(class) => {
                         self.error = None;
-                        self.path.clear();
-
-                        match self.class_type {
-                            ClassType::Training => {
-                                self.classes.push(class);
-                                response = LoaderResponse::new(true);
-                            }
-                            ClassType::Exam => {
-                                self.exam_classes.push(class);
-                                response = LoaderResponse::new(true);
-                            }
-                        }
+                        response = LoaderResponse::new(Some(class));
                     }
                 }
             };
@@ -102,23 +96,31 @@ impl ClassLoader {
         response
     }
 
-    fn load_grayscale(&mut self, ctx: &Context) -> Result<ClassData, String> {
+    fn load_grayscale(
+        &mut self,
+        class_manager: &ClassManager,
+        exam_manager: &ClassManager,
+        ctx: &Context,
+    ) -> Result<TextureData, String> {
         let luma = open(&self.path).map_err(|err| err.to_string())?.to_luma8();
         let vec = luma.to_vec();
 
-        let classes = match self.class_type {
-            ClassType::Training => &self.classes,
-            ClassType::Exam => &self.exam_classes,
+        let manager = match self.class_type {
+            ClassType::Training => class_manager,
+            ClassType::Exam => exam_manager,
         };
 
-        if classes.iter().any(|x| x.bytes().eq(&vec)) {
-            return Err("This image has already been loaded".to_owned());
+        if manager.classes.iter().any(|x| x.bytes.eq(&vec)) {
+            return Err("This class has already been loaded".to_owned());
         }
 
-        if self.size.is_none() {
-            self.size = Some((luma.width() as usize, luma.height() as usize));
-        } else if self.size.unwrap() != (luma.width() as usize, luma.height() as usize) {
-            return Err("Error: Images should be of the same format".to_owned());
+        if manager.classes.is_empty() {
+            self.size = (luma.width() as usize, luma.height() as usize);
+        } else if self.size != (luma.width() as usize, luma.height() as usize) {
+            return Err(
+                "Error: Classes should have the same number of realizations and attributes"
+                    .to_owned(),
+            );
         }
 
         let image = ColorImage::from_gray(
@@ -128,6 +130,6 @@ impl ClassLoader {
 
         let texture = ctx.load_texture(&self.path, image, Default::default());
 
-        Ok(ClassData::new(vec, texture))
+        Ok(TextureData::new(vec, texture))
     }
 }

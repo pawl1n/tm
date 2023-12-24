@@ -112,7 +112,7 @@ impl SK {
         let padding_x = left_top.x + radius + stroke_width;
 
         let center = pos2(padding_x - min_x * k, padding_y - min_y * k);
-        painter.circle_filled(center, radius, Color32::YELLOW);
+        painter.circle_filled(center, radius, Color32::GREEN);
 
         let center = pos2(
             padding_x + (self.distance as f32 - min_x) * k,
@@ -122,7 +122,7 @@ impl SK {
 
         self.r_shannon.iter().for_each(|r| {
             let center = pos2(padding_x - min_x * k, padding_y - min_y * k);
-            painter.circle_stroke(center, *r as f32 * k, (stroke_width, Color32::YELLOW));
+            painter.circle_stroke(center, *r as f32 * k, (stroke_width, Color32::GREEN));
         });
 
         self.r_kullback.iter().for_each(|r| {
@@ -135,7 +135,7 @@ impl SK {
                 padding_x - (min_x - self.distance as f32) * k,
                 padding_y - min_y * k,
             );
-            painter.circle_stroke(center, *r as f32 * k, (stroke_width, Color32::YELLOW));
+            painter.circle_stroke(center, *r as f32 * k, (stroke_width, Color32::GREEN));
         });
 
         self.r_kullback_closest.iter().for_each(|r| {
@@ -148,7 +148,7 @@ impl SK {
 
         self.self_realizations.iter().for_each(|c| {
             let center = pos2(padding_x + (c.x - min_x) * k, padding_y + (c.y - min_y) * k);
-            painter.circle_stroke(center, radius, (stroke_width, Color32::YELLOW));
+            painter.circle_stroke(center, radius, (stroke_width, Color32::GREEN));
         });
 
         self.closest_realizations.iter().for_each(|c| {
