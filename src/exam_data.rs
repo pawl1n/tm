@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{class_data::TextureData, criteria::Criteria, hamming::SKManager};
+use crate::{class_data::TextureData, criteria::Criteria, sk_manager::SKManager};
 
 pub type ExamRealizationResults = (Vec<usize>, usize);
 

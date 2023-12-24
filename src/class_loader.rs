@@ -52,7 +52,7 @@ impl ClassLoader {
         ui.horizontal(|ui| {
             ui.add(TextEdit::singleline(&mut self.path));
 
-            if ui.add(Button::new("Load image")).clicked() {
+            if ui.add(Button::new("Load class")).clicked() {
                 match self.load_grayscale(manager, exam_manager, ui.ctx()) {
                     Err(msg) => {
                         self.error = Some(msg.to_string());

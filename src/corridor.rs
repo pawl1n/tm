@@ -1,16 +1,16 @@
 use super::draw::Show;
 use eframe::egui::Ui;
-use egui_plot::{Legend, Line, Plot};
+use egui_plot::{Legend, Line, Plot, PlotPoints};
 
 #[derive(Default, Debug)]
 pub struct Allowances {
-    pub lower: Vec<u8>,
-    pub upper: Vec<u8>,
+    pub lower: Vec<f64>,
+    pub upper: Vec<f64>,
 }
 
 #[derive(Debug, Default)]
 pub struct Corridor {
-    expectation: Vec<u8>,
+    expectation: Vec<f64>,
     pub allowances: Allowances,
     delta: u8,
 }
@@ -42,27 +42,19 @@ impl Corridor {
         self.calculate_upper_allowance();
     }
 
-    fn math_expectation(selected_class: &[u8], (w, h): (usize, usize)) -> Vec<u8> {
-        let mut avgerage_by_col: Vec<u8> = Vec::with_capacity(w);
-
-        for i in 0..w {
-            let mut sum: u32 = 0;
-
-            for j in 0..h {
-                sum += selected_class[i + j * h] as u32;
-            }
-
-            avgerage_by_col.push((sum as usize / w) as u8);
-        }
-
-        avgerage_by_col
+    fn math_expectation(selected_class: &[u8], (w, h): (usize, usize)) -> Vec<f64> {
+        (0..w).map(|i| {
+            (0..h).map(|j| {
+                selected_class[i + j * h] as u32
+            }).sum::<u32>() as f64 / h as f64
+        }).collect()
     }
 
     fn calculate_lower_allowance(&mut self) {
         self.allowances.lower = self
             .expectation
             .iter()
-            .map(|x| x.saturating_sub(self.delta))
+            .map(|x| x - self.delta as f64)
             .collect();
     }
 
@@ -70,7 +62,7 @@ impl Corridor {
         self.allowances.upper = self
             .expectation
             .iter()
-            .map(|x| x.saturating_add(self.delta))
+            .map(|x| x + self.delta as f64)
             .collect();
     }
 }
@@ -82,18 +74,13 @@ impl Show for Corridor {
             .auto_bounds_x()
             .auto_bounds_y()
             .show(ui, |ui| {
-                ui.line(Line::new(vec_to_plot_points(&self.expectation)).name("Expectation"));
+                ui.line(Line::new(PlotPoints::from_ys_f64(&self.expectation)).name("Expectation"));
                 ui.line(
-                    Line::new(vec_to_plot_points(&self.allowances.lower)).name("Lower allowance"),
+                    Line::new(PlotPoints::from_ys_f64(&self.allowances.lower)).name("Lower allowance"),
                 );
                 ui.line(
-                    Line::new(vec_to_plot_points(&self.allowances.upper)).name("Upper allowance"),
+                    Line::new(PlotPoints::from_ys_f64(&self.allowances.upper)).name("Upper allowance"),
                 );
             });
     }
-}
-
-fn vec_to_plot_points(value: &[u8]) -> egui_plot::PlotPoints {
-    let points: Vec<f32> = value.iter().map(|x| *x as f32).collect();
-    egui_plot::PlotPoints::from_ys_f32(&points)
 }

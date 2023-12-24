@@ -45,7 +45,7 @@ impl BinaryRepresentation {
                     .enumerate()
                     .map(|(i, x)| {
                         let index = i.rem_euclid(attributes);
-                        if *x >= allowances.lower[index] && *x <= allowances.upper[index] {
+                        if *x as f64 > allowances.lower[index] && (*x as f64) < allowances.upper[index] {
                             u8::MAX
                         } else {
                             u8::MIN

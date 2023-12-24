@@ -7,7 +7,7 @@ mod corridor;
 mod criteria;
 mod draw;
 mod exam_data;
-mod hamming;
+mod sk_manager;
 mod optimization_results;
 mod sk;
 
@@ -19,7 +19,7 @@ use draw::Show;
 
 use eframe::egui;
 use exam_data::ExamResult;
-use hamming::SKManager;
+use sk_manager::SKManager;
 use optimization_results::OptimizationResults;
 
 fn main() -> Result<(), eframe::Error> {
