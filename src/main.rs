@@ -223,6 +223,7 @@ impl MyApp {
                     i,
                     &self.sk_manager.distances_to_realizations[i],
                     self.class_loader.size.1,
+                    self.sk_manager.sk[i].distance,
                 )
             })
             .collect();
@@ -329,7 +330,10 @@ impl MyApp {
                                     [self.class_manager.selected_class]
                                     .characteristics[c.0];
 
-                                characteristics.d1 > 0.5 && characteristics.d2 > 0.5
+                                characteristics.d1 >= 0.5
+                                    && characteristics.d2 >= 0.5
+                                    && characteristics.d1 <= 1.0
+                                    && characteristics.d2 <= 1.0
                             } else {
                                 false
                             }

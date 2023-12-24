@@ -22,7 +22,12 @@ pub struct Characteristics {
 }
 
 impl Criteria {
-    pub fn new(self_index: usize, distances: &[Vec<u32>], number_of_realizations: usize) -> Self {
+    pub fn new(
+        self_index: usize,
+        distances: &[Vec<u32>],
+        number_of_realizations: usize,
+        distance: u32,
+    ) -> Self {
         let max_radius = Self::calculate_max_radius(distances);
 
         let self_realizations: Vec<usize> = (0..max_radius)
@@ -41,6 +46,7 @@ impl Criteria {
             &others_realizations,
             number_of_realizations,
             number_of_realizations * distances.len() - 1,
+            max_radius as usize,
         );
 
         let kullback_criteria = Self::kullback_criteria(&characteristics);
@@ -49,7 +55,10 @@ impl Criteria {
         let working_space: Vec<usize> = characteristics
             .iter()
             .enumerate()
-            .filter(|(_, c)| c.d1 >= 0.5 && c.d1 <= 1.0 && c.d2 >= 0.5 && c.d2 <= 1.0)
+            .skip(1)
+            .filter(|(i, c)| {
+                c.d1 >= 0.5 && c.d1 <= 1.0 && c.d2 >= 0.5 && c.d2 <= 1.0 && *i < distance as usize
+            })
             .map(|(i, _)| i)
             .collect();
 
@@ -149,8 +158,9 @@ impl Criteria {
         others_realizations: &[usize],
         number_of_realizations: usize,
         number_of_others_realizations: usize,
+        max_radius: usize,
     ) -> Vec<Characteristics> {
-        (0..realizations.len())
+        (0..max_radius)
             .map(|i| {
                 let d1 = realizations[i] as f64 / number_of_realizations as f64;
                 let alpha = 1.0 - d1;
