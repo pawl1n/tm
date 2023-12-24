@@ -12,6 +12,8 @@ impl Show for OptimizationResults {
     fn show(&self, ui: &mut Ui) {
         Plot::new("Optimization results")
             .legend(Legend::default())
+            .auto_bounds_x()
+            .auto_bounds_y()
             .show(ui, |ui| {
                 ui.line(
                     Line::new(PlotPoints::from_ys_f64(&self.kullback_criteria)).name("Kullback"),

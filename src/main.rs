@@ -136,8 +136,8 @@ impl eframe::App for MyApp {
                     });
             }
 
-            if *self.widget_stauses.get("Plot").unwrap_or(&false) {
-                egui::Window::new("Plot")
+            if *self.widget_stauses.get("Allowances").unwrap_or(&false) {
+                egui::Window::new("Allowances")
                     .default_size(egui::vec2(400.0, 200.0))
                     .show(ctx, |ui| {
                         frame.show(ui, |ui| {

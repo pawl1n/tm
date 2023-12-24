@@ -79,6 +79,8 @@ impl Show for Corridor {
     fn show(&self, ui: &mut Ui) {
         Plot::new("Corridor")
             .legend(Legend::default())
+            .auto_bounds_x()
+            .auto_bounds_y()
             .show(ui, |ui| {
                 ui.line(Line::new(vec_to_plot_points(&self.expectation)).name("Expectation"));
                 ui.line(
