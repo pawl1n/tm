@@ -22,22 +22,25 @@ pub struct Characteristics {
 }
 
 impl Criteria {
-    pub fn new(
-        distances_to_self: &[u32],
-        distances_to_closest: &[u32],
-        number_of_realizations: usize,
-    ) -> Self {
-        let max_radius = Self::calculate_max_radius(distances_to_self, distances_to_closest);
+    pub fn new(self_index: usize, distances: &[Vec<u32>], number_of_realizations: usize) -> Self {
+        let max_radius = Self::calculate_max_radius(distances);
 
-        let self_realizations =
-            Self::calculate_number_of_realizations(distances_to_self, max_radius);
-        let closest_realizations =
-            Self::calculate_number_of_realizations(distances_to_closest, max_radius);
+        let self_realizations: Vec<usize> = (0..max_radius)
+            .map(|radius| {
+                distances[self_index]
+                    .iter()
+                    .filter(|&distance| distance <= &radius)
+                    .count()
+            })
+            .collect();
+        let others_realizations =
+            Self::calculate_number_of_others_realizations(distances, self_index, max_radius);
 
         let characteristics = Self::calculate_characteristics(
             &self_realizations,
-            &closest_realizations,
+            &others_realizations,
             number_of_realizations,
+            number_of_realizations * distances.len() - 1,
         );
 
         let kullback_criteria = Self::kullback_criteria(&characteristics);
@@ -74,6 +77,7 @@ impl Criteria {
         self.working_space
             .iter()
             .map(|&i| (i, self.kullback_criteria[i]))
+            .filter(|(_, criteria)| criteria.is_normal())
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
     }
 
@@ -142,14 +146,15 @@ impl Criteria {
 
     fn calculate_characteristics(
         realizations: &[usize],
-        closest_realizations: &[usize],
+        others_realizations: &[usize],
         number_of_realizations: usize,
+        number_of_others_realizations: usize,
     ) -> Vec<Characteristics> {
         (0..realizations.len())
             .map(|i| {
                 let d1 = realizations[i] as f64 / number_of_realizations as f64;
                 let alpha = 1.0 - d1;
-                let beta = closest_realizations[i] as f64 / number_of_realizations as f64;
+                let beta = others_realizations[i] as f64 / number_of_others_realizations as f64;
                 let d2 = 1.0 - beta;
 
                 Characteristics {
@@ -162,19 +167,33 @@ impl Criteria {
             .collect()
     }
 
-    fn calculate_max_radius(distances_to_self: &[u32], distances_to_closest: &[u32]) -> u32 {
-        let self_max_distance = distances_to_self.iter().max().unwrap_or(&0);
-        let closest_max_distance = distances_to_closest.iter().max().unwrap_or(&0);
-
-        *self_max_distance.max(closest_max_distance)
+    fn calculate_max_radius(distances: &[Vec<u32>]) -> u32 {
+        *distances
+            .iter()
+            .map(|d| d.iter().max().unwrap_or(&0))
+            .max()
+            .unwrap_or(&0)
     }
 
-    fn calculate_number_of_realizations(
-        distances_to_realizations: &[u32],
+    fn calculate_number_of_others_realizations(
+        distances_of_classes: &[Vec<u32>],
+        self_index: usize,
         max_radius: u32,
     ) -> Vec<usize> {
         (0..max_radius)
-            .map(|i| distances_to_realizations.iter().filter(|&d| d < &i).count())
+            .map(|radius| {
+                distances_of_classes
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != self_index)
+                    .map(|(_, distances_to_realizations)| {
+                        distances_to_realizations
+                            .iter()
+                            .filter(|&distance| distance <= &radius)
+                            .count()
+                    })
+                    .sum()
+            })
             .collect()
     }
 }
@@ -190,6 +209,8 @@ impl Show for Criteria {
             Plot::new("Kullback")
                 .legend(Legend::default())
                 .width(available_width / 2.0)
+                .auto_bounds_x()
+                .auto_bounds_y()
                 .show(ui, |ui| {
                     ui.line(
                         Line::new(PlotPoints::from_ys_f64(&self.kullback_criteria))
@@ -207,6 +228,8 @@ impl Show for Criteria {
             Plot::new("Shannon")
                 .legend(Legend::default())
                 .width(available_width / 2.0)
+                .auto_bounds_x()
+                .auto_bounds_y()
                 .show(ui, |ui| {
                     ui.line(
                         Line::new(PlotPoints::from_ys_f64(&self.shannon_criteria)).name("Shannon"),

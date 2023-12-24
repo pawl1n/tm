@@ -3,54 +3,60 @@ use crate::{class_data::TextureData, sk::SK};
 #[derive(Default)]
 pub struct SKManager {
     pub sk: Vec<SK>,
+    pub distances: Vec<Vec<u32>>,
+    pub distances_to_realizations: Vec<Vec<Vec<u32>>>,
 }
 
 impl SKManager {
     pub fn new(matrices: &[TextureData], reference_vectors: &[TextureData]) -> SKManager {
-        let sk = matrices
-            .iter()
-            .enumerate()
-            .map(|(index, matrix)| {
-                let center = &reference_vectors[index].bytes;
-
-                let distances_to_center = Self::distances_between(&matrix.bytes, center);
-                let (distances_to_closest, distance, closest) = reference_vectors
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| i != &index)
-                    .map(|(i, reference_vector)| {
-                        (i, Self::distance_between(&reference_vector.bytes, center))
+        let distances: Vec<Vec<u32>> = (0..matrices.len())
+            .map(|i| {
+                (0..matrices.len())
+                    .map(|j| {
+                        Self::distance_between(
+                            &reference_vectors[i].bytes,
+                            &reference_vectors[j].bytes,
+                        )
                     })
-                    .min_by_key(|(_, distance)| *distance)
-                    .map_or_else(
-                        || (Vec::new(), 0, 0),
-                        |(closest, distance)| {
-                            (
-                                Self::distances_between(&matrices[closest].bytes, center),
-                                distance,
-                                closest,
-                            )
-                        },
-                    );
+                    .collect()
+            })
+            .collect();
 
-                let center = &reference_vectors[closest].bytes;
+        let distances_to_realizations: Vec<Vec<Vec<u32>>> = (0..matrices.len())
+            .map(|i| {
+                (0..matrices.len())
+                    .map(|j| {
+                        Self::distances_between(&matrices[j].bytes, &reference_vectors[i].bytes)
+                    })
+                    .collect()
+            })
+            .collect();
 
-                let distances_from_closest_to_itself =
-                    Self::distances_between(&matrices[closest].bytes, center);
-                let distances_from_closest = Self::distances_between(&matrix.bytes, center);
+        let sk = (0..matrices.len())
+            .map(|i| {
+                let distances_to_center = &distances_to_realizations[i][i];
+
+                let closest = (0..matrices.len())
+                    .filter(|&j| i != j)
+                    .min_by_key(|&j| distances[i][j])
+                    .unwrap_or_default();
 
                 SK::new(
-                    distances_to_center,
-                    distances_to_closest,
-                    distances_from_closest_to_itself,
-                    distances_from_closest,
-                    distance,
+                    distances_to_center.to_vec(),
+                    distances_to_realizations[i][closest].clone(),
+                    distances_to_realizations[closest][closest].clone(),
+                    distances_to_realizations[closest][i].clone(),
+                    distances[i][closest],
                     closest,
                 )
             })
             .collect();
 
-        Self { sk }
+        Self {
+            sk,
+            distances,
+            distances_to_realizations,
+        }
     }
 
     /// Returns the Hamming distance between two vectors.

@@ -14,10 +14,11 @@ mod sk;
 use class_loader::ClassLoader;
 use class_manager::ClassManager;
 use corridor::Corridor;
+use criteria::Criteria;
 use draw::Show;
 
 use eframe::egui;
-use exam_data::{ExamData, ExamResult};
+use exam_data::ExamResult;
 use hamming::SKManager;
 use optimization_results::OptimizationResults;
 
@@ -43,14 +44,13 @@ struct MyApp {
     delta: u8,
     corridor: Corridor,
     widget_stauses: std::collections::HashMap<String, bool>,
-    criterias: Vec<criteria::Criteria>,
-    closest_criterias: Vec<criteria::Criteria>,
-    exam_data: Vec<Vec<ExamData>>,
+    exam_data: Vec<ExamResult>,
     optimization_results: Option<OptimizationResults>,
     class_manager: ClassManager,
     exam_class_manager: ClassManager,
     class_loader: ClassLoader,
     sk_manager: SKManager,
+    criterias: Vec<Criteria>,
 }
 
 impl eframe::App for MyApp {
@@ -70,7 +70,11 @@ impl eframe::App for MyApp {
         egui::TopBottomPanel::bottom(egui::Id::new("Loader"))
             .frame(frame)
             .show(ctx, |ui| {
-                if let Some(data) = self.class_loader.show(&self.class_manager, ui).loaded() {
+                if let Some(data) = self
+                    .class_loader
+                    .show(&self.class_manager, &self.exam_class_manager, ui)
+                    .loaded()
+                {
                     if self.class_manager.classes.is_empty() {
                         self.corridor = Corridor::new(&data.bytes, self.class_loader.size)
                     }
@@ -101,20 +105,6 @@ impl eframe::App for MyApp {
                             criteria.show(ui);
                         });
                 });
-
-                self.closest_criterias
-                    .iter()
-                    .enumerate()
-                    .for_each(|(i, criteria)| {
-                        egui::Window::new(format!("Criteria {i} closest"))
-                            .id(egui::Id::new(format!("Criteria{i} closest")))
-                            .default_size(egui::vec2(250.0, 200.0))
-                            .min_width(400.0)
-                            .min_height(150.0)
-                            .show(ctx, |ui| {
-                                criteria.show(ui);
-                            });
-                    });
             }
 
             if *self.widget_stauses.get("2D").unwrap_or(&false) {
@@ -187,16 +177,9 @@ impl eframe::App for MyApp {
                         .iter()
                         .enumerate()
                         .for_each(|(i, exam_result)| {
-                            ui.add(egui::Label::new(format!("Exam result for {i}")));
-
-                            ui.vertical(|ui| {
-                                exam_result.iter().for_each(|result| {
-                                    ui.label(format!(
-                                        "{} -> {}: {}",
-                                        result.class1, result.class2, result.result
-                                    ));
-                                });
-                            });
+                            ui.add(egui::Label::new(format!(
+                                "Exam result for {i}: {exam_result}"
+                            )));
                         });
                 });
             }
@@ -225,101 +208,39 @@ impl eframe::App for MyApp {
 
 impl MyApp {
     fn exam(&mut self) {
-        self.exam_data = self
-            .exam_class_manager
-            .binary_representations
-            .matrices
-            .iter()
-            .map(|matrix| {
-                self.sk_manager
-                    .sk
-                    .iter()
-                    .enumerate()
-                    .map(|(i, sk)| {
-                        let results1: Vec<f64> = SKManager::distances_between(
-                            &matrix.bytes,
-                            &self.class_manager.binary_representations.reference_vectors[i].bytes,
-                        )
-                        .iter()
-                        .map(|x| 1.0 - *x as f64 / self.criterias[i].min_radius())
-                        .collect();
-
-                        let results2: Vec<f64> = SKManager::distances_between(
-                            &matrix.bytes,
-                            &self.class_manager.binary_representations.reference_vectors
-                                [sk.closest]
-                                .bytes,
-                        )
-                        .iter()
-                        .map(|x| 1.0 - *x as f64 / self.closest_criterias[i].min_radius())
-                        .collect();
-
-                        let mut results: (u32, u32, u32) = (0, 0, 0);
-
-                        for i in 0..results1.len() {
-                            if results1[i] > 0.0 && results2[i] < 0.0 {
-                                results.0 += 1;
-                            } else if results1[i] < 0.0 && results2[i] > 0.0 {
-                                results.1 += 1;
-                            } else {
-                                results.2 += 1;
-                            }
-                        }
-
-                        let mu1 = results1.iter().sum::<f64>() / self.class_loader.size.1 as f64;
-                        let mu2 = results2.iter().sum::<f64>() / self.class_loader.size.1 as f64;
-
-                        let result = if mu1 > 0.0 && mu2 < 0.0 {
-                            ExamResult::Found(i, results)
-                        } else if mu1 < 0.0 && mu2 > 0.0 {
-                            ExamResult::Found(sk.closest, results)
-                        } else {
-                            ExamResult::Unknown(results)
-                        };
-
-                        ExamData::new(i, sk.closest, result)
-                    })
-                    .collect()
-            })
-            .collect();
+        self.exam_data = exam_data::exam(
+            &self.class_manager.binary_representations.reference_vectors,
+            &self.exam_class_manager.binary_representations.matrices,
+            &self.criterias,
+            self.class_loader.size.1,
+        );
     }
 
     fn calculate_criteria(&mut self) {
-        let (_, number_of_realizations) = self.class_loader.size;
-
-        self.criterias = self
-            .sk_manager
-            .sk
-            .iter_mut()
-            .map(|sk| {
-                let criteria = criteria::Criteria::new(
-                    &sk.distances_to_self,
-                    &sk.distances_to_closest,
-                    number_of_realizations,
-                );
-
-                sk.set_radius(criteria.r_kullback.clone(), criteria.r_shannon.clone());
-
-                criteria
+        self.criterias = (0..self.sk_manager.sk.len())
+            .map(|i| {
+                Criteria::new(
+                    i,
+                    &self.sk_manager.distances_to_realizations[i],
+                    self.class_loader.size.1,
+                )
             })
             .collect();
 
-        self.closest_criterias = self
-            .sk_manager
+        self.sk_manager
             .sk
             .iter_mut()
-            .map(|sk| {
-                let criteria = criteria::Criteria::new(
-                    &sk.distances_from_closest_to_itself,
-                    &sk.distances_from_closest,
-                    number_of_realizations,
+            .enumerate()
+            .for_each(|(i, sk)| {
+                sk.set_radius(
+                    self.criterias[i].r_kullback.to_vec(),
+                    self.criterias[i].r_shannon.to_vec(),
                 );
-
-                sk.set_radius_closest(criteria.r_kullback.clone(), criteria.r_shannon.clone());
-
-                criteria
-            })
-            .collect();
+                sk.set_radius_closest(
+                    self.criterias[sk.closest].r_kullback.to_vec(),
+                    self.criterias[sk.closest].r_shannon.to_vec(),
+                );
+            });
     }
 
     fn recalculate(&mut self, ctx: &egui::Context) {
@@ -378,47 +299,43 @@ impl MyApp {
                         self.corridor.delta(self.delta);
                         self.recalculate(ui.ctx());
 
-                        let max_shannon_criteria = self.criterias
-                            [self.class_manager.selected_class]
-                            .max_shannon_criteria();
-                        let max_closest_shannon_criteria = self.closest_criterias
-                            [self.class_manager.selected_class]
-                            .max_shannon_criteria();
+                        let max_shannon_criteria: Vec<Option<(usize, f64)>> = self
+                            .criterias
+                            .iter()
+                            .map(|c| c.max_shannon_criteria())
+                            .collect();
 
-                        let shannon_delta = (max_shannon_criteria.map_or(0.0, |c| c.1)
-                            + max_closest_shannon_criteria.map_or(0.0, |c| c.1))
-                            / 2.0;
+                        let average_shannon = max_shannon_criteria
+                            .iter()
+                            .map(|c| c.map_or(0.0, |c| c.1))
+                            .sum::<f64>()
+                            / max_shannon_criteria.len() as f64;
 
-                        let max_kullback_criteria = self.criterias
-                            [self.class_manager.selected_class]
-                            .max_kullback_criteria();
-                        let max_closest_kullback_criteria = self.closest_criterias
-                            [self.class_manager.selected_class]
-                            .max_kullback_criteria();
+                        let max_kullback_criteria: Vec<Option<(usize, f64)>> = self
+                            .criterias
+                            .iter()
+                            .map(|c| c.max_kullback_criteria())
+                            .collect();
 
-                        let kullback_delta = (max_kullback_criteria.map_or(0.0, |c| c.1)
-                            + max_closest_kullback_criteria.map_or(0.0, |c| c.1))
-                            / 2.0;
+                        let average_kullback = max_kullback_criteria
+                            .iter()
+                            .map(|c| c.map_or(0.0, |c| c.1))
+                            .sum::<f64>()
+                            / max_kullback_criteria.len() as f64;
 
-                        let is_in_working_space = if max_shannon_criteria.is_some()
-                            && max_closest_shannon_criteria.is_some()
-                        {
-                            let characteristics = &self.criterias
-                                [self.class_manager.selected_class]
-                                .characteristics[max_shannon_criteria.unwrap().0];
-                            let closest_characteristics = &self.closest_criterias
-                                [self.class_manager.selected_class]
-                                .characteristics[max_closest_shannon_criteria.unwrap().0];
+                        let in_working_space = max_shannon_criteria.iter().all(|c| {
+                            if let Some(c) = c {
+                                let characteristics = &self.criterias
+                                    [self.class_manager.selected_class]
+                                    .characteristics[c.0];
 
-                            characteristics.d1 > 0.5
-                                && closest_characteristics.d1 > 0.5
-                                && characteristics.d2 > 0.5
-                                && closest_characteristics.d2 > 0.5
-                        } else {
-                            false
-                        };
+                                characteristics.d1 > 0.5 && characteristics.d2 > 0.5
+                            } else {
+                                false
+                            }
+                        });
 
-                        (shannon_delta, kullback_delta, is_in_working_space)
+                        (average_shannon, average_kullback, in_working_space)
                     })
                     .collect();
 

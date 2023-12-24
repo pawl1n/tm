@@ -41,14 +41,19 @@ pub struct ClassLoader {
 }
 
 impl ClassLoader {
-    pub fn show(&mut self, manager: &ClassManager, ui: &mut Ui) -> LoaderResponse {
+    pub fn show(
+        &mut self,
+        manager: &ClassManager,
+        exam_manager: &ClassManager,
+        ui: &mut Ui,
+    ) -> LoaderResponse {
         let mut response = LoaderResponse::default();
 
         ui.horizontal(|ui| {
             ui.add(TextEdit::singleline(&mut self.path));
 
             if ui.add(Button::new("Load image")).clicked() {
-                match self.load_grayscale(manager, ui.ctx()) {
+                match self.load_grayscale(manager, exam_manager, ui.ctx()) {
                     Err(msg) => {
                         self.error = Some(msg.to_string());
                     }
@@ -93,11 +98,17 @@ impl ClassLoader {
 
     fn load_grayscale(
         &mut self,
-        manager: &ClassManager,
+        class_manager: &ClassManager,
+        exam_manager: &ClassManager,
         ctx: &Context,
     ) -> Result<TextureData, String> {
         let luma = open(&self.path).map_err(|err| err.to_string())?.to_luma8();
         let vec = luma.to_vec();
+
+        let manager = match self.class_type {
+            ClassType::Training => class_manager,
+            ClassType::Exam => exam_manager,
+        };
 
         if manager.classes.iter().any(|x| x.bytes.eq(&vec)) {
             return Err("This class has already been loaded".to_owned());
