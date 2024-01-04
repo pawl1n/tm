@@ -7,9 +7,9 @@ mod corridor;
 mod criteria;
 mod draw;
 mod exam_data;
-mod sk_manager;
 mod optimization_results;
 mod sk;
+mod sk_manager;
 
 use class_loader::ClassLoader;
 use class_manager::ClassManager;
@@ -19,8 +19,8 @@ use draw::Show;
 
 use eframe::egui;
 use exam_data::ExamResult;
-use sk_manager::SKManager;
 use optimization_results::OptimizationResults;
+use sk_manager::SKManager;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
